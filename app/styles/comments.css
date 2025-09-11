@@ -1,0 +1,75 @@
+/* app/styles/comments.css */
+
+.comment-thread {
+  position: relative;
+}
+
+/* Horizontal connector line for child comments */
+.comment-thread::before {
+  content: '';
+  position: absolute;
+  top: 1rem;
+  left: -0.75rem;
+  width: 0.75rem;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+/* Vertical line for nested comments */
+.replies-wrapper {
+  position: relative;
+}
+
+.replies-content {
+  position: relative;
+  /* This pseudo-element creates the vertical line that runs down the side */
+}
+.replies-content::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -0.75rem;
+  height: 100%;
+  border-left: 1px solid #e5e7eb;
+}
+
+/* Hide the lines on top-level comments */
+.comment-thread[data-depth="0"]::before {
+  display: none;
+}
+
+/* The vertical line stops at the last comment */
+.comment-thread:last-of-type::before {
+  height: 1.5rem; /* This is a fixed value to stop the line below the comment */
+}
+
+/* The horizontal line is not needed for the first child comment */
+.replies-content > .comment-thread:first-of-type::before {
+  content: none;
+}
+
+.status-badge {
+    padding: 2px 4px;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    margin-bottom: 0.5em;
+    /* text-transform: uppercase; */
+}
+
+.status-badge.pending {
+    background-color:rgb(255, 224, 50);
+    color: #333;
+}
+
+.status-badge.flagged {
+    background-color: #ef5350;
+    color: #fff;
+}
+
+.appeal-link {
+    color: #fff;
+    text-decoration: underline;
+    margin-left: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+}

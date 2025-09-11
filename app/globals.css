@@ -1,0 +1,542 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Your other CSS rules will go below here */
+
+/* Basic resets */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+/*  font-family: Arial, sans-serif;*/
+}
+
+/* Header */
+header {
+  display: flex;
+  height: 70px;
+  background-color: white;
+  color: #f08a24;
+  padding-left: 1em;
+  padding-right: 1em;
+  padding-top: 0.5em;
+  font-size: 1.2em;
+  text-align: left;
+  border-bottom: 1px solid #e7e7e7;
+  box-shadow: 0 4px 8px #555(0,0,0,0.05);
+  gap: 1em;
+}
+
+.header-left {
+  width: 20%;
+  text-align: left;
+}
+
+.topmenu {
+  flex: 1;
+  text-align: center;
+  border-top-left-radius: 1em;
+  border-top-right-radius: 1em;
+}
+
+.topmenu:hover {
+  background: #f5f6f7;
+  cursor: pointer;
+}
+
+.header-right {
+  display: flex;
+  width: 25%;
+  text-align: right;
+}
+
+.icon {
+  color: teal;
+  margin: 0.5em;
+}
+
+/* Container for main layout */
+.container {
+  background-color: #f7f7f7;
+  display: flex;
+  min-height: calc(100vh - 100px); /* adjusts for header/footer */
+  padding: 1em;
+  gap: 1em;
+}
+
+/* Left Sidebar */
+.left-sidebar {
+  width: 20%;
+  background-color: #ffffff;
+  border: 1px solid #e6e6e6;    /* outline */
+  border-radius: 10px;       /* rounded corners */
+  padding: 1em;
+}
+
+/* Main Content */
+.content {
+  flex: 1; /* takes remaining space between sidebars */
+  row-gap: 1em;
+
+}
+
+/* Right Sidebar */
+.right-sidebar {
+  width: 25%;
+  background-color: #ffffff;
+  border: 1px solid #e6e6e6;    /* outline */
+  border-radius: 10px;       /* rounded corners */
+  padding: 1em;
+}
+
+/* Footer */
+footer {
+  background-color: #333;
+  color: white;
+  padding: 2em 2em;
+  text-align: center;
+}
+
+/* Simple list styling */
+.left-sidebar ul {
+  list-style: none;
+  margin-top: 1em;
+}
+
+.left-sidebar li {
+  margin: 0.5em 0;
+}
+
+
+/* Responsive layout */
+@media (max-width: 768px) {
+  .container {
+    flex-direction: column;
+    padding: 0.5em;
+  }
+
+  .left-sidebar,
+  .right-sidebar,
+  .content {
+    width: 100%; /* all sections take full width */
+    margin-bottom: 1em; /* spacing between sections */
+  }
+}
+
+/* Post block styling */
+.post-block {
+  background-color: #ffffff;
+  border: 1px solid #e6e6e6;
+  border-radius: 8px;
+  padding: 1em;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+  margin-bottom: 1em;
+}
+
+/* Post heading: avatar + user info */
+.post-heading {
+  display: flex;             /* row: avatar left, info right */
+  align-items: center;
+  gap: 0.8em;
+  margin-bottom: 0.8em;
+}
+
+.avatar {
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  flex-shrink: 0;            /* don’t shrink avatar */
+}
+
+.user-info {
+  display: flex;
+  flex-direction: column;    /* stack username above date */
+  row-gap: 0.2em;
+}
+
+.username {
+  font-weight: bold;
+  color: #333;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.post-date {
+  font-size: 0.75em;
+  color: #777;
+}
+
+.post-content {
+  color:#333;
+}
+
+.post-content p {
+/*  margin: 0; */
+  line-height: 1.4;
+}
+
+.post-icon {
+  color: #555;
+  margin-right: 0.9em;
+}
+
+.post-info {
+  display: flex;
+  margin-top: 1.5em;
+  color: #555;
+  font-size: 0.85em;
+}
+
+.post-info-reactions {
+  flex: 1;                 /* make each action take equal space */
+  text-align: left;
+}
+
+.post-info-stats {
+  flex: 1;                 /* make each action take equal space */
+  text-align: right;
+}
+
+.post-info-stats i {
+  margin-right: 0.3em;
+}
+
+.post-footer {
+  display: flex;
+  justify-content: space-around; /* space evenly across width */
+  border-top: 2px solid #e6e6e6;
+  border-bottom: 2px solid #e6e6e6;
+  margin-top: 0.5em;
+  padding-top: 0.25em;
+  padding-bottom: 0.25em;
+  color: #555;
+  font-size: 0.9em;
+  font-weight: 600;
+  vertical-align: middle;
+}
+
+.footer-action {
+  flex: 1;                 /* make each action take equal space */
+  text-align: center;      /* center icons + text */
+  cursor: pointer;
+  padding: 1em 0;
+  transition: background 0.2s;
+}
+
+.footer-action:hover {
+  background-color: #e7e7e7;
+  border-radius: 5px;
+}
+
+.footer-action i {
+  margin-right: 0.3em;
+}
+
+/* Create Post Box */
+.create-post {
+  background-color: #ffffff;
+  border: 1px solid #ccc;
+  border-radius: 10px;
+  padding: 1em;
+  margin-bottom: 1.5em;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+  display: flex;
+  flex-direction: row;
+  gap: 0.5em;
+}
+
+.create-post textarea {
+  width: 100%;
+  min-height: 60px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 0.5em;
+  resize: vertical;
+  font-family: inherit;
+}
+
+.create-post button {
+  align-self: flex-end;
+  background-color: #1877f2; /* Facebook-style blue */
+  color: white;
+  border: none;
+  padding: 0.5em 1.2em;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: bold;
+}
+
+.create-post button:hover {
+  background-color: #145dbf;
+}
+
+.post-heading {
+  display: flex;             /* row: avatar left, info right */
+  align-items: center;
+  gap: 0.8em;
+  margin-bottom: 0.8em;
+}
+
+.comment-block {
+  padding-left: 0.5em;
+  margin-bottom: 1em;
+}
+
+.add-comment {
+  display: flex;
+  height: 40px;
+  border-top: 1px solid #ddd;
+  margin-top: 1em;
+  padding-top: 1em;
+  margin-bottom: 1em;
+  column-gap: 0.5em;
+  vertical-align: middle;
+}
+
+.comment-textarea {
+  flex: 1;
+  height: fit-content;
+}
+
+.comment-textarea textarea {
+  width: 100%;
+  height: fit-content;
+  resize: none;
+  overflow: hidden;
+  height: fit-content;
+  field-sizing: content;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 0.7em;
+  font-family: inherit;
+  font-size: 0.8em;
+  line-height: 1.4;
+  background-color: #f5f6f7;
+  color: #555;
+}
+
+.comment-heading {
+  display: flex;             /* row: avatar left, info right */
+  align-items: center;
+  vertical-align: middle;
+  gap: 0.8em;
+  margin-bottom: 0.5em;
+  margin-top: 1em;
+}
+
+.comment-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  flex-shrink: 0;            /* don’t shrink avatar */
+}
+
+.comment-username {
+  font-size: 0.85em;
+  font-weight: bold;
+  color: #333;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.comment-date {
+  font-size: 0.65em;
+  color: #777;
+}
+
+.comment-content {
+  width: fit-content;
+  background: #e7e7e7;
+  padding: 0.7em;
+  border-radius: 8px;
+  color:#555;
+  font-size: 0.85em;
+  line-height: 1.4;
+  margin-left: 44px;
+}
+
+.comment-info {
+  display: flex;
+  flex-direction: row;
+  margin-top: 0.5em;
+  margin-left: 44px;
+  color: #555;
+  font-size: 0.8em;
+  font-weight: 600;
+}
+
+.comment-response {
+  display: flex;
+  text-align: left;
+  margin-left: 0.7em;
+}
+
+.comment-response:hover {
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.more-replies {
+  font-size: 0.85em;
+  color: teal;
+  margin-top: 0.6em;
+  margin-left: 0.7em;
+  font-weight: 500;
+  margin-left: 52px;
+  width: fit-content;
+}
+
+.more-replies:hover {
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* Fake "textarea" trigger */
+.fake-textarea {
+  flex: 1;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 0.7em;
+  background-color: #f5f6f7;
+  color: #555;
+  cursor: pointer;
+}
+
+.post-images {
+  display: grid;
+  gap: 2px;
+  margin-top: 0.5em;
+  width: 100%;
+}
+
+.post-images.one img {
+  width: 100%;
+  height: 100%;
+  aspect-ratio: 1 / 1; /* square */
+  object-fit: cover;
+  border-radius: 8px;
+}
+
+.post-images.two {
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr;
+  height: 400px; /* adjust as needed */
+}
+
+.post-images.two img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 8px;
+}
+
+.post-images.three {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  height: 400px;
+}
+
+.post-images.three img:nth-child(1) { /* large left image */
+  grid-row: 1 / span 2;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 8px;
+}
+
+.post-images.three img:nth-child(2), 
+.post-images.three img:nth-child(3) { /* top-right & bottom-right */
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 8px;
+}
+
+.post-images.four {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  height: 400px;
+}
+
+.post-images.four img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 8px;
+}
+
+.post-images .overlay {
+  position: absolute;
+  bottom: 4px;
+  right: 4px;
+  background: rgba(0,0,0,0.6);
+  color: white;
+  font-weight: bold;
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+/* Modal overlay */
+.modal {
+  display:flex; /* hidden by default */
+  position: fixed;
+  z-index: 999;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+  background-color: rgba(0,0,0,0.4);
+}
+
+/* Modal box */
+.modal-content {
+  background-color: #fff;
+  margin: 10% auto;
+  padding: 1.5em;
+  border-radius: 10px;
+  width: 90%;
+  max-width: 500px;
+  box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+  display: flex;
+  flex-direction: column;
+  gap: 1em;
+  z-index: 1000;
+}
+
+/* Close button */
+.close {
+  align-self: flex-end;
+  font-size: 1.5em;
+  cursor: pointer;
+}
+
+.modal-content textarea {
+  width: 100%;
+  min-height: 100px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 0.5em;
+  resize: vertical;
+  font-family: inherit;
+}
+
+.modal-content button {
+  align-self: flex-end;
+  background-color: #1877f2;
+  color: white;
+  border: none;
+  padding: 0.5em 1.2em;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: bold;
+  margin-top: 1em;
+  gap: 1em;
+}
+
+.modal-content button:hover {
+  background-color: #145dbf;
+}
