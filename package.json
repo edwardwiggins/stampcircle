@@ -9,9 +9,11 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@ducanh2912/next-pwa": "^10.2.9",
     "@supabase/auth-helpers-nextjs": "^0.10.0",
     "@supabase/ssr": "^0.7.0",
     "@supabase/supabase-js": "^2.57.2",
+    "@uploadcare/react-uploader": "^1.10.2",
     "date-fns": "^4.1.0",
     "dexie": "^4.2.0",
     "dexie-react-hooks": "^4.2.0",

@@ -3,7 +3,6 @@ import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 
 export async function POST(request: Request) {
-  const requestUrl = new URL(request.url);
   const { email, password } = await request.json();
 
   const supabase = createServerClient(
@@ -30,8 +29,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: error.message }, { status: 400 });
   }
 
-  // Redirect to the home page after successful login
-  return NextResponse.redirect(requestUrl.origin, {
-    status: 301,
-  });
+  // On success, return a simple JSON response.
+  return NextResponse.json({ message: 'Login successful' }, { status: 200 });
 }

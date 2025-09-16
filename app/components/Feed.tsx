@@ -1,21 +1,18 @@
-// app/components/Feed.tsx
 'use client';
 
-import { useUser } from '@/app/context/user-context';
 import PostCard from './postCard';
-import { LocalPost, LocalProfile } from '@/app/lib/local-db';
+import type { LocalPost, LocalUserProfile } from '@/app/lib/local-db';
 
+// **UPDATED**: The props interface now includes the handler functions
 interface FeedProps {
     posts: LocalPost[];
-    onLoadMore: () => void;
-    hasMore: boolean;
-    isFetchingMore: boolean;
+    userProfile: LocalUserProfile | null;
+    onDeletePost: (postId: number) => void;
+    onUpdatePost: (postId: number, newContent: string) => void;
+    onReportPost: (postId: number) => void;
 }
 
-export default function Feed({ posts, onLoadMore, hasMore, isFetchingMore }: FeedProps) {
-    const { userProfile } = useUser();
-
-    // De-duplicate the posts array before rendering
+export default function Feed({ posts, userProfile, onDeletePost, onUpdatePost, onReportPost }: FeedProps) {
     const uniquePosts = Array.from(new Map(posts.map(post => [post.id, post])).values());
 
     if (!uniquePosts || uniquePosts.length === 0) {
@@ -29,24 +26,16 @@ export default function Feed({ posts, onLoadMore, hasMore, isFetchingMore }: Fee
     return (
         <div className="feed-container">
             {uniquePosts.map((post) => (
-                <PostCard key={post.id} post={post} userProfile={userProfile} />
+                // **UPDATED**: Pass all props, including handlers, down to each PostCard
+                <PostCard 
+                    key={post.id} 
+                    post={post} 
+                    userProfile={userProfile}
+                    onDelete={onDeletePost}
+                    onUpdate={onUpdatePost}
+                    onReport={onReportPost}
+                />
             ))}
-            {hasMore && (
-                <div className="text-center py-4">
-                    <button
-                        type="button"
-                        onClick={onLoadMore}
-                        className="bg-blue-500 text-white px-4 py-2 rounded-md"
-                    >
-                        {isFetchingMore ? 'Loading...' : 'Load More'}
-                    </button>
-                </div>
-            )}
-            {!hasMore && (
-                <div className="text-center py-4 text-gray-500">
-                    You've reached the end of the feed.
-                </div>
-            )}
         </div>
     );
 }

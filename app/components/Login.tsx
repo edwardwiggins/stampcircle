@@ -24,8 +24,8 @@ export default function Login() {
     });
 
     if (response.ok) {
-      // The API route handler will perform the redirect, so we don't need to do anything here
-      console.log('Login successful! Redirecting...');
+      // On a successful response from the API, redirect the user.
+      router.push('/');
     } else {
       const data = await response.json();
       setError(data.error || 'Login failed.');

@@ -15,7 +15,7 @@
 /* Header */
 header {
   display: flex;
-  height: 70px;
+  min-height: 70px;
   background-color: white;
   color: #f08a24;
   padding-left: 1em;
@@ -26,6 +26,13 @@ header {
   border-bottom: 1px solid #e7e7e7;
   box-shadow: 0 4px 8px #555(0,0,0,0.05);
   gap: 1em;
+}
+
+.header-middle {
+  display: flex;
+  flex: 1;
+  flex-direction: row;
+  text-align: center;
 }
 
 .header-left {
@@ -45,10 +52,19 @@ header {
   cursor: pointer;
 }
 
+
+.topmenu-right {
+  text-align: center;
+  width: fit-content;
+}
+
+.topmenu-right:hover {
+  cursor: pointer;
+}
+
 .header-right {
   display: flex;
   width: 25%;
-  text-align: right;
 }
 
 .icon {
@@ -116,6 +132,18 @@ footer {
     padding: 0.5em;
   }
 
+  header {
+    flex-direction: column;
+    padding: 0.5em;
+  }
+
+  .header-left,
+  .header-middle,
+  .header-right {
+    width: 100%;
+    text-align: center;
+  }
+
   .left-sidebar,
   .right-sidebar,
   .content {
@@ -140,6 +168,7 @@ footer {
   align-items: center;
   gap: 0.8em;
   margin-bottom: 0.8em;
+  Position: relative;
 }
 
 .avatar {
@@ -156,6 +185,7 @@ footer {
 }
 
 .username {
+  flex-direction: row;
   font-weight: bold;
   color: #333;
   cursor: pointer;
@@ -178,7 +208,7 @@ footer {
 
 .post-icon {
   color: #555;
-  margin-right: 0.9em;
+  margin-right: 0.5em;
 }
 
 .post-info {
@@ -208,7 +238,7 @@ footer {
   border-top: 2px solid #e6e6e6;
   border-bottom: 2px solid #e6e6e6;
   margin-top: 0.5em;
-  padding-top: 0.25em;
+  padding-top: 0.2em;
   padding-bottom: 0.25em;
   color: #555;
   font-size: 0.9em;
@@ -220,8 +250,9 @@ footer {
   flex: 1;                 /* make each action take equal space */
   text-align: center;      /* center icons + text */
   cursor: pointer;
-  padding: 1em 0;
+  padding: 0.5em 0;
   transition: background 0.2s;
+  vertical-align: middle;
 }
 
 .footer-action:hover {
@@ -255,10 +286,10 @@ footer {
   resize: vertical;
   font-family: inherit;
 }
-
+/*
 .create-post button {
   align-self: flex-end;
-  background-color: #1877f2; /* Facebook-style blue */
+  background-color: #1877f2;
   color: white;
   border: none;
   padding: 0.5em 1.2em;
@@ -270,7 +301,7 @@ footer {
 .create-post button:hover {
   background-color: #145dbf;
 }
-
+*/
 .post-heading {
   display: flex;             /* row: avatar left, info right */
   align-items: center;
@@ -285,7 +316,10 @@ footer {
 
 .add-comment {
   display: flex;
-  height: 40px;
+  flex: 1;
+  min-height: 50px; /* Set a minimum height for when the textarea is empty */
+  height: auto;     /* ADDED: Allow the container's height to grow with its content */
+  align-items: flex-start; /* ADDED: Align the avatar and icons to the top */
   border-top: 1px solid #ddd;
   margin-top: 1em;
   padding-top: 1em;
@@ -294,26 +328,31 @@ footer {
   vertical-align: middle;
 }
 
+/* This is the div that WRAPS your textarea. */
 .comment-textarea {
-  flex: 1;
-  height: fit-content;
+    /* This is the key: it tells this div to grow and fill all available space. */
+    flex: 1;
+    /* This ensures it can contain a growing element properly. */
+    display: flex;
 }
 
+/* This targets the textarea element itself. */
 .comment-textarea textarea {
-  width: 100%;
-  height: fit-content;
-  resize: none;
-  overflow: hidden;
-  height: fit-content;
-  field-sizing: content;
-  border: 1px solid #ddd;
-  border-radius: 8px;
-  padding: 0.7em;
-  font-family: inherit;
-  font-size: 0.8em;
-  line-height: 1.4;
-  background-color: #f5f6f7;
-  color: #555;
+    width: 100%;
+    /* The initial height is now controlled by the 'rows' attribute */
+    /* REMOVED: height, min-height, field-sizing */
+    max-height: 200px; /* We still want a limit */
+    resize: none;
+    overflow-y: auto;
+    /* Your existing styling remains the same */
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    padding: 0.7em;
+    font-family: inherit;
+    font-size: 0.9em;
+    line-height: 1.4;
+    background-color: #f5f6f7;
+    color: #555;
 }
 
 .comment-heading {
@@ -321,8 +360,9 @@ footer {
   align-items: center;
   vertical-align: middle;
   gap: 0.8em;
-  margin-bottom: 0.5em;
+  margin-bottom: 0.35em;
   margin-top: 1em;
+  Position: relative; /* Needed for positioning the options icon */
 }
 
 .comment-avatar {
@@ -348,6 +388,7 @@ footer {
 .comment-content {
   width: fit-content;
   background: #e7e7e7;
+  border: 1px solid #cecece;
   padding: 0.7em;
   border-radius: 8px;
   color:#555;
@@ -375,6 +416,87 @@ footer {
 .comment-response:hover {
   cursor: pointer;
   text-decoration: underline;
+}
+
+.comment-options {
+    position: absolute;
+    top: 0;
+    right: 0;
+}
+
+.options-icon {
+    cursor: pointer;
+    color: #555; /* A darker, more visible gray */
+    padding: 8px;
+    border-radius: 50%; /* Make the hover effect a circle */
+    transition: background-color 0.2s, color 0.2s;
+}
+
+.options-icon:hover {
+    color: #000; /* Black on hover */
+    background-color: #f0f0f0; /* A light gray background circle on hover */
+}
+
+.context-menu {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    background-color: white;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    z-index: 10;
+    width: 180px;
+}
+
+.context-menu div {
+    padding: 10px 15px;
+    cursor: pointer;
+    font-size: 0.85em;
+}
+
+.context-menu div:hover {
+    background-color: #f5f5f5;
+}
+
+.context-menu-icon {
+    vertical-align: top;
+    margin-right: 0.5em;
+}
+
+/* Edit Mode Styles */
+.edit-comment-container {
+    margin-left: 52px; /* Align with original comment content */
+}
+
+.edit-textarea {
+    width: 100%;
+    min-height: 80px;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    padding: 8px;
+    font-family: inherit;
+    font-size: 0.85em;
+}
+
+.edit-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.edit-actions button {
+    padding: 6px 12px;
+    border-radius: 6px;
+    border: none;
+    cursor: pointer;
+    font-weight: 600;
+}
+
+.edit-actions button:last-child {
+    background-color: #1877f2;
+    color: white;
 }
 
 .more-replies {
@@ -489,7 +611,7 @@ footer {
   width: 100%;
   height: 100%;
   overflow: auto;
-  background-color: rgba(0,0,0,0.4);
+  background-color: rgba(0,0,0,0.6);
 }
 
 /* Modal box */
@@ -500,20 +622,22 @@ footer {
   border-radius: 10px;
   width: 90%;
   max-width: 500px;
+  height: fit-content;
   box-shadow: 0 4px 8px rgba(0,0,0,0.2);
   display: flex;
   flex-direction: column;
   gap: 1em;
   z-index: 1000;
+
 }
 
-/* Close button */
+/* Close button 
 .close {
   align-self: flex-end;
   font-size: 1.5em;
   cursor: pointer;
 }
-
+*/
 .modal-content textarea {
   width: 100%;
   min-height: 100px;
@@ -524,9 +648,9 @@ footer {
   font-family: inherit;
 }
 
-.modal-content button {
+.close-button {
   align-self: flex-end;
-  background-color: #1877f2;
+  background-color: teal;
   color: white;
   border: none;
   padding: 0.5em 1.2em;
@@ -534,9 +658,106 @@ footer {
   cursor: pointer;
   font-weight: bold;
   margin-top: 1em;
-  gap: 1em;
+  margin-right: 16px;
 }
 
+.submit-button {
+  align-self: flex-end;
+  background-color: #f08a24;
+  color: white;
+  border: none;
+  padding: 0.5em 1.2em;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: bold;
+  margin-top: 1em;
+}
+
+.submit-button:disabled {
+  opacity: 50%;
+}
+/*
 .modal-content button:hover {
   background-color: #145dbf;
+}
+*/
+.new-posts-button {
+    position: fixed; /* Makes it float over the content */
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%); /* This horizontally centers the button perfectly */
+    z-index: 50; /* Ensure it's on top of other content */
+
+    /* Your preferred styling */
+    background-color: #f08a24;
+    color: white;
+    font-weight: 600;
+    padding: 10px 20px;
+    border-radius: 9999px; /* A pill shape */
+    border: none;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    transition: transform 0.2s ease-in-out;
+}
+
+.new-posts-button:hover {
+    transform: translateX(-50%) scale(1.05); /* A slight bounce effect on hover */
+}
+
+.offline-banner {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background-color: #333;
+  color: white;
+  padding: 12px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+  font-size: 0.9rem;
+}
+
+.offline-banner p {
+  margin: 0;
+}
+
+.visibility-button {
+  color: whitesmoke;
+  font-size: 0.8em;
+  display: flex;
+  width: auto;
+  padding: 0.5em;
+  border-radius: 8px;
+  border: none;
+  background-color: teal;
+  text-align: left;
+  margin-top: -16px;
+}
+
+.visibility-button:hover {
+  cursor: pointer;
+}
+
+.visibility-dropdown {
+  position: absolute;
+  border: 1px solid #ccc;
+  background-color: white;
+  text-align: left;
+  z-index: 10;
+}
+
+.visibility-item {
+  background-color: white;
+  padding: 6px 12px;
+  text-align: left;
+  font-size: 0.8em;
+}
+
+.visibility-item:hover {
+  background-color: #e6e6e6;
+  cursor: pointer;
 }

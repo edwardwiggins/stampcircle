@@ -50,26 +50,109 @@
 .status-badge {
     padding: 2px 4px;
     border-radius: 4px;
-    font-size: 0.75rem;
-    font-weight: 600;
-    margin-bottom: 0.5em;
+    font-size: 0.6rem;
+    font-weight: 400;
+    margin-left: -4px;
     /* text-transform: uppercase; */
 }
 
 .status-badge.pending {
-    background-color:rgb(255, 224, 50);
+    background-color: rgba(255, 217, 0, 0.4);
+    border: 1px solid gold;
     color: #333;
 }
 
 .status-badge.flagged {
-    background-color: #ef5350;
+    background-color: #ef53508f;
+    border: 1px solid #ef5350;
+    color: #333;
+}
+
+.status-badge.appealed {
+    background-color:rgba(255, 0, 255, 0.4);
+    border: 1px solid fuchsia;
+    color: #fff;
+}
+
+.status-badge.reported {
+    background-color:rgba(0, 0, 0, 0.4);
+    border: 1px solid black;
     color: #fff;
 }
 
 .appeal-link {
-    color: #fff;
-    text-decoration: underline;
+    color: darkslateblue;
     margin-left: 4px;
-    font-size: 0.75rem;
-    font-weight: 600;
+    font-size: 0.6rem;
+    font-weight: 400;
+}
+
+.appeal-link:hover {
+    font-weight: 500;
+}
+
+.comments {
+  font-size: 1.25em;
+  font-weight: bold;
+  color: #333;
+}
+
+.comments-button {
+  width: 170px;
+  height: fit-content;
+  padding: 8px 4px;
+  color: white;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+  background-color: teal;
+  cursor: pointer;
+}
+
+/*.deleted-placeholder-content {
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  background-color: #f0f2f5;*/ /* Or your preferred bubble color */
+/*  border-radius: 18px;
+  width: 100%;
+}
+*/
+.deleted-placeholder-content p {
+  margin: 0;
+  font-style: italic;
+  color: #333; /* A muted text color */
+}
+
+.deleted-placeholder-content {
+  width: fit-content;
+  background: #ec65638a;
+  border: 1px solid #ec6563;
+  padding: 0.7em;
+  border-radius: 8px;
+  color:#333;
+  font-size: 0.85em;
+  line-height: 1.4;
+  margin-left: 44px;
+}
+
+/* Add to app/styles/comments.css */
+
+.comment-image-gallery {
+  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.comment-image-wrapper {
+  position: relative;
+  overflow: hidden;
+  border-radius: 8px;
+}
+
+.comment-image {
+  width: 150px;
+  height: 150px;
+  object-fit: cover;
+  cursor: pointer;
 }

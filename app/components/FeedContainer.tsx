@@ -1,120 +1,150 @@
-// app/components/FeedContainer.tsx
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
-import { createBrowserClient } from '@supabase/ssr';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { useLiveQuery } from 'dexie-react-hooks';
 import Feed from './Feed';
 import AddPostButton from './AddPostButton';
-import { db, LocalPost, LocalComment, LocalProfile } from '@/app/lib/local-db';
+import { db } from '@/app/lib/local-db';
+import type { LocalPost, LocalUserProfile } from '@/app/lib/local-db';
 import { useUser } from '@/app/context/user-context';
-import { Post } from '@/app/lib/types';
+import { syncLocalPosts } from '@/app/lib/supabase-sync-utils';
+import { SlRefresh } from "react-icons/sl";
 
-export default function FeedContainer() {
-    const supabase = createBrowserClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+// Helper Component for the floating button (unchanged)
+const NewPostsButton = ({ count, onClick }: { count: number; onClick: () => void }) => {
+    return (
+        <button onClick={onClick} className="new-posts-button">
+            <SlRefresh className="mr-2" />
+            Show {count} New {count > 1 ? 'Posts' : 'Post'}
+        </button>
     );
-    const { userProfile, loading: userLoading } = useUser();
-    const [loading, setLoading] = useState(true);
-    const [posts, setPosts] = useState<LocalPost[]>([]);
-    const [offset, setOffset] = useState(0);
-    const [hasMore, setHasMore] = useState(true);
-    const [isFetchingMore, setIsFetchingMore] = useState(false);
+};
 
-    const handleLoadMore = useCallback(() => {
-        if (!hasMore || isFetchingMore) return;
-        setIsFetchingMore(true);
-        setOffset(prevOffset => prevOffset + 50);
-    }, [hasMore, isFetchingMore]);
+// Custom hook for intervals (unchanged)
+function useInterval(callback: () => void, delay: number | null) {
+    const savedCallback = useRef<() => void>();
+    useEffect(() => { savedCallback.current = callback; }, [callback]);
+    useEffect(() => {
+        function tick() { if (savedCallback.current) savedCallback.current(); }
+        if (delay !== null) {
+            const id = setInterval(tick, delay);
+            return () => clearInterval(id);
+        }
+    }, [delay]);
+}
+
+// --- The Main FeedContainer Component ---
+export default function FeedContainer() {
+    // **UPDATED**: Destructure the new 'isDbReady' state from the context.
+    const { userProfile, loading: userLoading, supabase, isDbReady } = useUser();
+    const [newPostCount, setNewPostCount] = useState(0);
+
+    const posts = useLiveQuery(
+        () => db.social_posts.orderBy('created_at').reverse().toArray(),
+        [] 
+    );
+
+    const prevPostCount = useRef(posts?.length || 0);
+
+    const syncAndReconcileFeed = useCallback(async () => {
+        if (!supabase || !navigator.onLine) return;
+        
+        console.log('Running full feed reconciliation...');
+        try {
+            const { data: remotePosts, error } = await supabase.rpc('get_feed_for_user');
+            if (error) throw error;
+
+            if (remotePosts) {
+                const postsToStore: LocalPost[] = remotePosts.map(p => ({ ...p, synced: 1 }));
+                await db.social_posts.bulkPut(postsToStore);
+
+                const authorIds = [...new Set(remotePosts.map(p => p.author_id))];
+                if (authorIds.length > 0) {
+                    const { data: profiles, error: profileError } = await supabase.from('user_profile').select('*').in('user_id', authorIds);
+                    if (profileError) throw profileError;
+                    if (profiles) await db.userProfile.bulkPut(profiles);
+                }
+            }
+            
+            setNewPostCount(0);
+            console.log('Feed reconciliation complete.');
+        } catch (err) {
+            console.error('Error during feed reconciliation:', err);
+        }
+    }, [supabase]);
+
+    const pollForNewPosts = useCallback(async () => {
+        if (!navigator.onLine || document.hidden || !supabase || !posts || posts.length === 0) return;
+        
+        const latestKnownTimestamp = posts[0].created_at;
+        const { data, error } = await supabase.rpc('check_for_new_posts', { latest_known_timestamp: latestKnownTimestamp });
+        
+        if (error) console.error("Failed to check for new posts:", JSON.stringify(error, null, 2));
+        else if (data > 0) setNewPostCount(data);
+    }, [posts, supabase]);
+
+    useInterval(pollForNewPosts, 30000);
 
     useEffect(() => {
-        const fetchAndSyncPosts = async () => {
-            if (userLoading) {
-                return;
-            }
-            try {
-                if (!userProfile?.user_id) {
-                    setLoading(false);
-                    return;
-                }
-                
-                // Fetch a new batch of posts from Supabase
-                const { data: postsData, error: postsError } = await supabase
-                    .from('social_posts')
-                    .select(`
-                        id,
-                        created_at,
-                        author_id,
-                        post_content,
-                        totalcomments,
-                        totalreactions,
-                        totalshares
-                    `)
-                    .order('created_at', { ascending: false })
-                    .limit(50)
-                    .range(offset, offset + 49);
+        const currentPostCount = posts?.length || 0;
+        if (currentPostCount > prevPostCount.current) {
+            pollForNewPosts();
+        }
+        prevPostCount.current = currentPostCount;
+    }, [posts, pollForNewPosts]);
 
-                if (postsError) {
-                    console.error('Error fetching posts:', postsError);
-                    setLoading(false);
-                    return;
-                }
-                
-                if (postsData && postsData.length > 0) {
-                    const postIds = postsData.map(post => post.id);
-                    const authorIds = postsData.map(post => post.author_id);
+    useEffect(() => {
+        if (userProfile?.user_id) {
+            syncLocalPosts();
+            syncAndReconcileFeed();
+        }
+    }, [userProfile, syncAndReconcileFeed]);
 
-                    // Fetch profiles and comments in parallel
-                    const [commentsResult, profilesResult] = await Promise.all([
-                      supabase.from('social_post_comments').select('*').in('post_id', postIds),
-                      supabase.from('user_profile').select('user_id, displayName, profileImage, username').in('user_id', authorIds)
-                    ]);
+    const handleShowNewPosts = () => {
+        syncAndReconcileFeed();
+    };
 
-                    // Sync all data to the local database
-                    if (commentsResult.data) {
-                        await db.social_post_comments.bulkPut(commentsResult.data as LocalComment[]);
-                    }
+    const handleDeletePost = async (postId: number) => {
+        if (!supabase) return;
+        await db.social_posts.update(postId, { is_deleted: true, synced: 0 });
+        syncLocalPosts();
+    };
 
-                    if (profilesResult.data) {
-                        await db.userProfile.bulkPut(profilesResult.data as LocalProfile[]);
-                    }
-                    
-                    if (postsData) {
-                        await db.social_posts.bulkPut(postsData as LocalPost[]);
-                    }
-                    
-                    // Filter out any posts that already exist in the state to prevent key errors
-                    const existingPostIds = new Set(posts.map(post => post.id));
-                    const uniqueNewPosts = postsData.filter(post => !existingPostIds.has(post.id));
+    const handleUpdatePost = async (postId: number, newContent: string) => {
+        if (!supabase) return;
+        await db.social_posts.update(postId, { post_content: newContent, post_status: 'pending', synced: 0 });
+        syncLocalPosts();
+    };
 
-                    setPosts(prevPosts => [...prevPosts, ...uniqueNewPosts as LocalPost[]]);
+    const handleReportPost = async (postId: number) => {
+        if (!supabase) return;
+        await db.social_posts.update(postId, { post_status: 'reported' });
+        const { error } = await supabase.rpc('report_post', { post_id_to_report: postId });
+        if (error) {
+            console.error("Failed to report post:", error);
+            await db.social_posts.update(postId, { post_status: 'approved' });
+        }
+    };
 
-                    if (postsData.length < 50) {
-                        setHasMore(false);
-                    }
-                } else {
-                    setHasMore(false);
-                }
-            } catch (err) {
-                console.error('Error during posts sync:', err);
-            } finally {
-                setLoading(false);
-                setIsFetchingMore(false);
-            }
-        };
-
-        fetchAndSyncPosts();
-    }, [userProfile, userLoading, offset]);
-
-
-    if (loading || userLoading) {
-        return <div className="feed-container">Loading...</div>;
+    // **UPDATED**: The component now waits for the user profile AND the database to be ready.
+    if (userLoading || !isDbReady || !posts) {
+        return <div className="feed-container">Loading feed...</div>;
     }
 
     return (
         <>
+            {newPostCount > 0 && (
+                <NewPostsButton count={newPostCount} onClick={handleShowNewPosts} />
+            )}
+            
             <AddPostButton />
-            <Feed posts={posts} onLoadMore={handleLoadMore} hasMore={hasMore} isFetchingMore={isFetchingMore} />
+            <Feed 
+                posts={posts} 
+                userProfile={userProfile}
+                onDeletePost={handleDeletePost}
+                onUpdatePost={handleUpdatePost}
+                onReportPost={handleReportPost}
+            />
         </>
     );
 }

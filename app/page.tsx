@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation';
 import { UserProvider } from './context/user-context';
 import { SlHome, SlPeople, SlSpeech, SlBubbles, SlPieChart, SlBell } from "react-icons/sl";
 import { cookies } from 'next/headers';
+import LogoutButton from './components/LogoutButton';
 
 export default async function Home() {
     const supabase = createServerSupabaseClient();
@@ -21,13 +22,16 @@ export default async function Home() {
                     <div className='header-left'>
                         <h1>StampCircle</h1>
                     </div>
-                    <div className='topmenu'><SlHome className='icon' size={30} /></div>
-                    <div className='topmenu'><SlPeople className='icon' size={30} /></div>
-                    <div className='topmenu'><SlBubbles className='icon' size={30} /></div>
-                    <div className='topmenu'><SlPieChart className='icon' size={30} /></div>
+                    <div className='header-middle'>
+                        <div className='topmenu'><SlHome className='icon' size={30} /></div>
+                        <div className='topmenu'><SlPeople className='icon' size={30} /></div>
+                        <div className='topmenu'><SlBubbles className='icon' size={30} /></div>
+                        <div className='topmenu'><SlPieChart className='icon' size={30} /></div>
+                    </div>
                     <div className='header-right'>
-                        <div><SlBell className='icon' size={30} /></div>
-                        <img className='avatar' src='/default-avatar.jpg' alt="Avatar"></img>
+                        <div className='topmenu-right'><SlBell className='icon' size={30} /></div>
+                        <div className='topmenu-right'><img className='avatar' src='/default-avatar.jpg' alt="Avatar"></img></div>
+                        <LogoutButton />
                     </div>
                 </header>
                 <div className='container'>

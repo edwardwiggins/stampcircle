@@ -24,6 +24,7 @@ export default function NewPostModal({ isOpen, onClose }: NewPostModalProps) {
     return (
         <div className='modal'>
             <div className='modal-content'>
+                <h2 className='text-xl font-bold'>Create a New Post</h2>
                 <div className="post-heading">
                     <Image
                       className='avatar'
@@ -35,7 +36,7 @@ export default function NewPostModal({ isOpen, onClose }: NewPostModalProps) {
                     <div className='user-info'>
                       <span className='username'>{userProfile.displayName}</span>
                     </div>
-                    <h2 className='text-xl font-bold'>Create a New Post</h2>
+                    
                 </div>
                 <NewPostForm
                     onClose={onClose}

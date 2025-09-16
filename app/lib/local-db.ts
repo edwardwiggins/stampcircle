@@ -1,17 +1,29 @@
-// app/lib/local-db.ts
-
 import Dexie, { Table } from 'dexie';
+import type { OutputFileEntry } from '@uploadcare/react-uploader';
 
+export interface LocalVisibilityOption {
+    id: number;
+    visible_to: string;
+    sort?: number;
+    visibility_icon?: string;
+}
+
+// **UPDATED**: Standardized `is_deleted` and `synced` to match comments
 export interface LocalPost {
-    id: number | string;
+    id: number;
     created_at: string;
     author_id: string;
     post_content: string;
-    is_synced: boolean;
-    // Add other properties from your Supabase table
+    synced: 0 | 1;
+    post_type: 'User' | 'Ad' | 'Suggestion' | 'Sponsored'; 
+    post_status: 'pending' | 'approved' | 'flagged' | 'rejected';
+    post_visibility?: number;
+    allow_comments?: boolean;
     totalreactions: number;
     totalcomments: number;
     totalshares: number;
+    metadata?: { [key: string]: any }; 
+    is_deleted?: boolean;
 }
 
 export interface LocalUserProfile {
@@ -25,6 +37,7 @@ export interface LocalUserProfile {
     profileImage: string;
 }
 
+// **UPDATED**: Added 'images' property to hold unsynced files
 export interface LocalComment {
     id: number;
     post_id: number;
@@ -33,17 +46,24 @@ export interface LocalComment {
     comment_content: string;
     depth: number;
     path: number[];
-    synced: 0 | 1; // 0 = unsynced, 1 = synced
+    synced: 0 | 1;
     status: 'pending' | 'approved' | 'flagged' | 'rejected';
     created_at: Date;
+    is_deleted?: boolean; 
+    images?: OutputFileEntry[];
+}
+
+export interface LocalCommentImage {
+    id: number;
+    comment_id: number;
+    user_id: string;
+    image_url: string;
+    created_at: string;
 }
 
 export async function updatePostAggregates(postId: number, key: string, value: number) {
     try {
-        await db.social_posts.update(postId, {
-            [key]: value,
-        });
-        console.log(`Local post ${postId} updated: ${key} = ${value}`);
+        await db.social_posts.update(postId, { [key]: value });
     } catch (error) {
         console.error(`Failed to update post ${postId} aggregate for key ${key}:`, error);
     }
@@ -53,13 +73,18 @@ export class SocialDatabase extends Dexie {
     social_posts!: Table<LocalPost>;
     userProfile!: Table<LocalUserProfile>;
     social_post_comments!: Table<LocalComment>;
+    social_post_visibilityoptions!: Table<LocalVisibilityOption>;
+    social_comment_images!: Table<LocalCommentImage>;
     
     constructor() {
         super('SocialDatabase');
-        this.version(3).stores({
-            social_posts: '++id, author_id, created_at, is_synced',
+        // **UPDATED**: Bumped version to 12 for schema changes
+        this.version(12).stores({
+            social_posts: '++id, author_id, created_at, synced, [is_deleted]',
             userProfile: 'user_id',
-            social_post_comments: '++id, post_id, author_id, parent_comment_id, synced, status, created_at, *path',
+            social_post_comments: '++id, post_id, author_id, parent_comment_id, synced, [is_deleted], images',
+            social_post_visibilityoptions: 'id, sort',
+            social_comment_images: '++id, comment_id, user_id'
         });
     }
 }
