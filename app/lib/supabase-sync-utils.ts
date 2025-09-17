@@ -159,11 +159,9 @@ export async function syncLocalComments() {
                             image_url: file.cdnUrl
                         }));
 
-                        // **UPDATED**: Add .select() to get the inserted image data back
                         const { data: newImageData, error: imageError } = await supabase.from('social_comment_images').insert(imagesToInsert).select();
                         if (imageError) throw imageError;
                         
-                        // **THE FIX**: If the images were inserted successfully, add them to the local DB.
                         if (newImageData) {
                             await db.social_comment_images.bulkPut(newImageData);
                         }
@@ -174,11 +172,30 @@ export async function syncLocalComments() {
                         const { images, ...restOfComment } = comment;
                         await db.social_post_comments.put({ ...restOfComment, ...newCommentData, created_at: new Date(newCommentData.created_at), synced: 1 });
                     }
-                } else { // EDITED comment
+                } else { 
                     const { data: { user } } = await supabase.auth.getUser();
                     if (comment.author_id !== user?.id) {
                         console.error(`RLS PRE-CHECK FAILED: Current user (${user?.id}) is not the author (${comment.author_id}) of comment ${comment.id}. Skipping sync for this item.`);
                         continue;
+                    }
+
+                    if (comment.deletedImages && comment.deletedImages.length > 0) {
+                        const { error: deleteError } = await supabase.from('social_comment_images').delete().in('id', comment.deletedImages);
+                        if (deleteError) throw deleteError;
+                        await db.social_comment_images.bulkDelete(comment.deletedImages);
+                    }
+
+                    if (comment.newImages && comment.newImages.length > 0) {
+                        const imagesToInsert = comment.newImages.map(file => ({
+                            comment_id: comment.id,
+                            user_id: comment.author_id,
+                            image_url: file.cdnUrl
+                        }));
+                        const { data: newImageData, error: imageError } = await supabase.from('social_comment_images').insert(imagesToInsert).select();
+                        if (imageError) throw imageError;
+                        if (newImageData) {
+                           await db.social_comment_images.bulkPut(newImageData);
+                        }
                     }
 
                     const { isFlagged, moderationData } = await fetch('/api/moderate', { 
@@ -188,9 +205,27 @@ export async function syncLocalComments() {
                     }).then(res => res.json());
                     
                     const newStatus = isFlagged ? 'flagged' : 'approved';
-                    const { data, error } = await supabase.from('social_post_comments').update({ comment_content: comment.comment_content, status: newStatus, moderation_data: moderationData }).eq('id', comment.id).select().single();
+                    const { data, error } = await supabase.from('social_post_comments')
+                        .update({ 
+                            comment_content: comment.comment_content, 
+                            status: newStatus, 
+                            moderation_data: moderationData 
+                        })
+                        .eq('id', comment.id)
+                        .select()
+                        .single();
+                        
                     if (error) throw error;
-                    if (data) await db.social_post_comments.update(comment.id, { ...data, created_at: new Date(data.created_at), synced: 1 });
+                    
+                    if (data) {
+                        await db.social_post_comments.update(comment.id, { 
+                            ...data, 
+                            created_at: new Date(data.created_at), 
+                            synced: 1, 
+                            newImages: [], 
+                            deletedImages: [] 
+                        });
+                    }
                 }
             } catch (syncError) {
                 console.error(`Failed to sync comment with id ${comment.id}:`, JSON.stringify(syncError, null, 2));

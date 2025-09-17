@@ -1,6 +1,11 @@
 import Dexie, { Table } from 'dexie';
 import type { OutputFileEntry } from '@uploadcare/react-uploader';
 
+export interface UnsyncedImage {
+    uuid: string;
+    cdnUrl: string;
+}
+
 export interface LocalVisibilityOption {
     id: number;
     visible_to: string;
@@ -8,7 +13,6 @@ export interface LocalVisibilityOption {
     visibility_icon?: string;
 }
 
-// **UPDATED**: Standardized `is_deleted` and `synced` to match comments
 export interface LocalPost {
     id: number;
     created_at: string;
@@ -37,7 +41,6 @@ export interface LocalUserProfile {
     profileImage: string;
 }
 
-// **UPDATED**: Added 'images' property to hold unsynced files
 export interface LocalComment {
     id: number;
     post_id: number;
@@ -50,7 +53,9 @@ export interface LocalComment {
     status: 'pending' | 'approved' | 'flagged' | 'rejected';
     created_at: Date;
     is_deleted?: boolean; 
-    images?: OutputFileEntry[];
+    images?: UnsyncedImage[];
+    newImages?: OutputFileEntry[];
+    deletedImages?: number[];
 }
 
 export interface LocalCommentImage {
@@ -78,11 +83,10 @@ export class SocialDatabase extends Dexie {
     
     constructor() {
         super('SocialDatabase');
-        // **UPDATED**: Bumped version to 12 for schema changes
-        this.version(12).stores({
+        this.version(13).stores({
             social_posts: '++id, author_id, created_at, synced, [is_deleted]',
             userProfile: 'user_id',
-            social_post_comments: '++id, post_id, author_id, parent_comment_id, synced, [is_deleted], images',
+            social_post_comments: '++id, post_id, author_id, parent_comment_id, synced, [is_deleted], images, newImages, deletedImages',
             social_post_visibilityoptions: 'id, sort',
             social_comment_images: '++id, comment_id, user_id'
         });

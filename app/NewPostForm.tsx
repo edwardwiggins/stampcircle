@@ -8,6 +8,8 @@ import { db } from './lib/local-db';
 import { createClientSupabaseClient } from './lib/client-supabase';
 import { SlArrowDown } from "react-icons/sl";
 import Image from 'next/image';
+// **UPDATED**: Import our new tracking utility
+import { trackEvent } from './lib/analytics';
 
 interface NewPostFormProps {
     onClose: () => void;
@@ -54,6 +56,8 @@ export default function NewPostForm({ onClose }: NewPostFormProps) {
         []
     );
 
+    const selectedOption = visibilityOptions?.find(opt => opt.id === visibilityId);
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setError(null);
@@ -63,6 +67,12 @@ export default function NewPostForm({ onClose }: NewPostFormProps) {
             if (!content.trim() || !userProfile?.user_id || !visibilityId) {
                 throw new Error('Missing content, user, or visibility selection.');
             }
+
+            // **UPDATED**: Track the 'post_created' event with its properties.
+            trackEvent('post_created', {
+                visibility: selectedOption?.visible_to || 'Unknown',
+                allow_comments: allowComments
+            });
 
             await createLocalPost({
                 author_id: userProfile.user_id,
@@ -81,8 +91,6 @@ export default function NewPostForm({ onClose }: NewPostFormProps) {
             setSubmitting(false);
         }
     };
-
-    const selectedOption = visibilityOptions?.find(opt => opt.id === visibilityId);
 
     return (
         <form onSubmit={handleSubmit} className='flex flex-col'>
@@ -119,7 +127,6 @@ export default function NewPostForm({ onClose }: NewPostFormProps) {
                                     setIsMenuOpen(false);
                                 }}
                             >
-                                {/* **THE FIX**: Added the Image component here for each item in the list. */}
                                 {option.visibility_icon && (
                                     <Image 
                                         src={option.visibility_icon} 

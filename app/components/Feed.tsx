@@ -3,16 +3,17 @@
 import PostCard from './postCard';
 import type { LocalPost, LocalUserProfile } from '@/app/lib/local-db';
 
-// **UPDATED**: The props interface now includes the handler functions
+// **UPDATED**: The props interface now includes the onBlockUser handler.
 interface FeedProps {
     posts: LocalPost[];
     userProfile: LocalUserProfile | null;
     onDeletePost: (postId: number) => void;
     onUpdatePost: (postId: number, newContent: string) => void;
     onReportPost: (postId: number) => void;
+    onBlockUser: (userId: string) => void;
 }
 
-export default function Feed({ posts, userProfile, onDeletePost, onUpdatePost, onReportPost }: FeedProps) {
+export default function Feed({ posts, userProfile, onDeletePost, onUpdatePost, onReportPost, onBlockUser }: FeedProps) {
     const uniquePosts = Array.from(new Map(posts.map(post => [post.id, post])).values());
 
     if (!uniquePosts || uniquePosts.length === 0) {
@@ -26,7 +27,6 @@ export default function Feed({ posts, userProfile, onDeletePost, onUpdatePost, o
     return (
         <div className="feed-container">
             {uniquePosts.map((post) => (
-                // **UPDATED**: Pass all props, including handlers, down to each PostCard
                 <PostCard 
                     key={post.id} 
                     post={post} 
@@ -34,6 +34,7 @@ export default function Feed({ posts, userProfile, onDeletePost, onUpdatePost, o
                     onDelete={onDeletePost}
                     onUpdate={onUpdatePost}
                     onReport={onReportPost}
+                    onBlockUser={onBlockUser}
                 />
             ))}
         </div>

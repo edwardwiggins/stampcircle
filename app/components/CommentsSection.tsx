@@ -3,7 +3,6 @@
 import Image from 'next/image';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { formatRelativeTime, pluralize } from '@/app/lib/utils';
-// **UPDATED**: Import LocalCommentImage
 import { db, LocalComment, LocalUserProfile, LocalPost, LocalCommentImage } from '@/app/lib/local-db';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useUser } from '@/app/context/user-context';
@@ -11,7 +10,10 @@ import '@/app/styles/comments.css';
 import AddCommentInput from './AddCommentInput';
 import { SlOptions, SlPencil, SlTrash, SlShield, SlCup, SlBadge } from "react-icons/sl";
 import { syncLocalComments } from '@/app/lib/supabase-sync-utils';
-import type { OutputFileEntry } from '@uploadcare/react-uploader';
+import type { OutputFileEntry, OutputCollectionState } from '@uploadcare/react-uploader';
+import { FileUploaderRegular } from '@uploadcare/react-uploader';
+import '@uploadcare/react-uploader/core.css';
+import { trackEvent } from '@/app/lib/analytics';
 
 interface CommentProps { 
     comment: LocalComment; 
@@ -24,7 +26,7 @@ interface CommentProps {
     expandedReplies: Set<number>; 
     onToggleReplies: (commentId: number) => void; 
     onDelete: (commentId: number) => void; 
-    onUpdate: (commentId: number, newContent: string) => void; 
+    onUpdate: (commentId: number, newContent: string, newFiles: OutputFileEntry[], deletedImageIds: number[]) => void; 
     onReport: (commentId: number) => void; 
 }
 
@@ -50,17 +52,33 @@ const Comment = ({
     const [isEditing, setIsEditing] = useState(false);
     const [editedContent, setEditedContent] = useState(comment.comment_content);
     const menuRef = useRef<HTMLDivElement>(null);
+    
+    const [newlyUploadedFiles, setNewlyUploadedFiles] = useState<OutputFileEntry[]>([]);
+    const [imagesToDelete, setImagesToDelete] = useState<number[]>([]);
+    
     const authorProfile: LocalUserProfile | undefined = useLiveQuery(() => db.userProfile.where('user_id').equals(comment.author_id).first(), [comment.author_id]);
     const replies: LocalComment[] | undefined = useLiveQuery(() => db.social_post_comments.where({ parent_comment_id: comment.id }).and(c => !c.is_deleted).sortBy('created_at').then(res => res.reverse()), [comment.id]);
-
-    // **NEW**: Fetch the images associated with this specific comment from the local DB.
-    const commentImages: LocalCommentImage[] | undefined = useLiveQuery(
-        () => db.social_comment_images.where({ comment_id: comment.id }).toArray(),
-        [comment.id]
-    );
+    const commentImages: LocalCommentImage[] | undefined = useLiveQuery(() => db.social_comment_images.where({ comment_id: comment.id }).toArray(), [comment.id]);
 
     useEffect(() => { const handleClickOutside = (event: MouseEvent) => { if (menuRef.current && !menuRef.current.contains(event.target as Node)) setIsMenuOpen(false); }; document.addEventListener("mousedown", handleClickOutside); return () => document.removeEventListener("mousedown", handleClickOutside); }, []);
-    const handleUpdateSubmit = () => { if (editedContent.trim() && editedContent !== comment.comment_content) { onUpdate(comment.id, editedContent); } setIsEditing(false); };
+    
+    const handleUpdateSubmit = () => {
+        onUpdate(comment.id, editedContent, newlyUploadedFiles, imagesToDelete);
+        setIsEditing(false);
+        setNewlyUploadedFiles([]);
+        setImagesToDelete([]);
+    };
+
+    const handleUploadChange = (data: OutputCollectionState) => {
+        if (data.allEntries) {
+            setNewlyUploadedFiles(data.allEntries);
+        }
+    };
+    
+    const handleMarkImageForDeletion = (imageId: number) => {
+        setImagesToDelete(prev => [...prev, imageId]);
+    };
+    
     const hasVisibleReplies = allComments.some(c => c.parent_comment_id === comment.id && !c.is_deleted);
     if (comment.is_deleted && !hasVisibleReplies) return null;
     if (!authorProfile && !comment.is_deleted) return <div className="comment-block" style={{ marginLeft: `${comment.depth * 40}px` }}>Loading...</div>;
@@ -89,14 +107,15 @@ const Comment = ({
                         <div className="comment-heading">
                             <Image className='comment-avatar' src={authorAvatar} alt="Avatar" width={40} height={40} />
                             <div className='user-info'>
-                                <span className='username'>{authorProfile?.displayName || 'Unknown User'}</span>
+                                <div className='flex items-center'>
+                                    <span className='username'>{authorProfile?.displayName || 'Unknown User'}</span>
+                                    {isPostAuthor && (
+                                        <span className='author-badge ml-[8px]'>
+                                            <SlBadge size={10} /> Post Author
+                                        </span>
+                                    )}
+                                </div>
                                 <span className='comment-date'>{formatRelativeTime(new Date(comment.created_at))}</span>
-                                {isCommentOwner && !isPostAuthor && (<span className='comment-date'><SlCup size={10} /> Author</span>)}
-                                {isPostAuthor && (
-                                    <span className='author-badge'>
-                                        <SlBadge size={10} /> Post Author
-                                    </span>
-                                )}
                             </div>
                             <div className="comment-options" ref={menuRef}>
                                 <SlOptions size={28} className="options-icon" onClick={() => setIsMenuOpen(!isMenuOpen)} />
@@ -114,16 +133,44 @@ const Comment = ({
                                 )}
                             </div>
                         </div>
+
                         {isEditing ? (
                             <div className="edit-comment-container">
                                 <textarea value={editedContent} onChange={(e) => setEditedContent(e.target.value)} className="edit-textarea" rows={3} />
+                                
+                                <p className="edit-section-header">Manage Images</p>
+                                <div className="image-preview-container edit-mode">
+                                    {commentImages?.filter(img => !imagesToDelete.includes(img.id)).map(image => (
+                                        <div key={image.id} className="thumbnail">
+                                            <Image src={`${image.image_url}-/preview/100x100/`} alt="Existing image" width={60} height={60} className="thumbnail-image" />
+                                            <button onClick={() => handleMarkImageForDeletion(image.id)} className="remove-button">×</button>
+                                        </div>
+                                    ))}
+                                    {newlyUploadedFiles.map((file, index) => (
+                                         <div key={file.uuid || index} className="thumbnail">
+                                            {file.cdnUrl && <Image src={`${file.cdnUrl}-/preview/100x100/`} alt="New image" width={60} height={60} className="thumbnail-image" />}
+                                         </div>
+                                    ))}
+                                </div>
+
+                                <div className='uploader-regular-container mt-2'>
+                                    <FileUploaderRegular
+                                        pubkey={process.env.NEXT_PUBLIC_UPLOADCARE_PUBLIC_KEY || ''}
+                                        multiple
+                                        imgOnly
+                                        sourceList='local, url, camera'
+                                        onChange={handleUploadChange}
+                                        classNameUploader="uc-light"
+                                    />
+                                </div>
+
                                 <div className="edit-actions">
-                                    <button onClick={() => { setIsEditing(false); setEditedContent(comment.comment_content); }}>Cancel</button>
+                                    <button onClick={() => { setIsEditing(false); setNewlyUploadedFiles([]); setImagesToDelete([]); }}>Cancel</button>
                                     <button onClick={handleUpdateSubmit}>Save</button>
                                 </div>
                             </div>
                         ) : (
-                            <div className="comment-content">
+                           <div className="comment-content">
                                 {isCommentOwner && (comment.status === 'pending' || comment.status === 'flagged' || comment.status === 'appealed' || comment.status === 'reported') && (
                                     <span className={`status-badge ${comment.status}`}>
                                         {comment.status === 'pending' && 'Pending Moderation'}
@@ -134,13 +181,12 @@ const Comment = ({
                                 )}
                                 {comment.comment_content && <p>{comment.comment_content}</p>}
 
-                                {/* **NEW**: Conditionally render the image gallery if images exist */}
                                 {commentImages && commentImages.length > 0 && (
                                     <div className="comment-image-gallery">
                                         {commentImages.map(image => (
                                             <div key={image.id} className="comment-image-wrapper">
                                                 <Image 
-                                                    src={`${image.image_url}-/preview/200x200/`}
+                                                    src={`${image.image_url}-/preview/400x400/`}
                                                     alt="Comment image"
                                                     width={200}
                                                     height={200}
@@ -221,6 +267,7 @@ export default function CommentsSection({ postId }: { postId: number }) {
     );
 
     const handleDeleteComment = async (commentId: number) => {
+        trackEvent('comment_deleted', { post_id: postId, comment_id: commentId });
         const postToUpdate = await db.social_posts.get(postId);
         if (postToUpdate) {
             await db.social_posts.update(postId, { totalcomments: (postToUpdate.totalcomments || 1) - 1 });
@@ -229,13 +276,26 @@ export default function CommentsSection({ postId }: { postId: number }) {
         syncLocalComments();
     };
 
-    const handleUpdateComment = async (commentId: number, newContent: string) => {
-        await db.social_post_comments.update(commentId, { comment_content: newContent, status: 'pending', synced: 0 });
+    const handleUpdateComment = async (commentId: number, newContent: string, newFiles: OutputFileEntry[], deletedImageIds: number[]) => {
+        trackEvent('comment_updated', {
+            post_id: postId,
+            comment_id: commentId,
+            new_images_count: newFiles.length,
+            deleted_images_count: deletedImageIds.length
+        });
+        await db.social_post_comments.update(commentId, { 
+            comment_content: newContent, 
+            status: 'pending', 
+            synced: 0,
+            newImages: newFiles,
+            deletedImages: deletedImageIds,
+        });
         syncLocalComments();
     };
     
     const handleReportComment = async (commentId: number) => {
         if (!supabase) return;
+        trackEvent('comment_reported', { post_id: postId, comment_id: commentId });
         await db.social_post_comments.update(commentId, { status: 'reported' });
         const { error } = await supabase.rpc('report_comment', { comment_id_to_report: commentId });
         if (error) { 
@@ -247,6 +307,12 @@ export default function CommentsSection({ postId }: { postId: number }) {
     const handleAddComment = async (commentContent: string, parentId: number | null = null, files: OutputFileEntry[] = []) => {
         if (!userProfile || (!commentContent.trim() && files.length === 0)) return;
         try {
+            trackEvent('comment_created', {
+                post_id: postId,
+                has_images: files.length > 0,
+                is_reply: parentId !== null
+            });
+
             const postToUpdate = await db.social_posts.get(postId);
             if (postToUpdate) {
                 await db.social_posts.update(postId, { totalcomments: (postToUpdate.totalcomments || 0) + 1 });
@@ -256,6 +322,11 @@ export default function CommentsSection({ postId }: { postId: number }) {
             let parentComment = parentId ? await db.social_post_comments.get(parentId) : undefined;
             const depth = parentComment ? parentComment.depth + 1 : 0;
             
+            const imagesToStore = files.map(file => ({
+                uuid: file.uuid,
+                cdnUrl: file.cdnUrl
+            }));
+
             const newComment: LocalComment = { 
                 id: tempId, 
                 post_id: postId, 
@@ -268,7 +339,7 @@ export default function CommentsSection({ postId }: { postId: number }) {
                 created_at: new Date(),
                 status: 'pending', 
                 is_deleted: false,
-                images: files
+                images: imagesToStore
             };
             
             await db.social_post_comments.add(newComment);
@@ -292,56 +363,26 @@ export default function CommentsSection({ postId }: { postId: number }) {
         });
     };
     
-    const fetchAndStoreComments = useCallback(async () => {
-        if (!supabase || !navigator.onLine) return;
-        try {
-            const { data: remoteComments, error } = await supabase.from('social_post_comments').select('*, social_comment_images(*)');
-            if (error) throw error;
+    // **REMOVED**: The component no longer fetches its own data on load.
+    // This is now handled by the parent FeedContainer.
+    // const fetchAndStoreComments = useCallback(...);
+    // useEffect(() => { ... }, []);
 
-            if (remoteComments) {
-                const authorIds = [...new Set(remoteComments.map(c => c.author_id))];
-                if (authorIds.length > 0) {
-                    const { data: profiles } = await supabase.from('user_profile').select('*').in('user_id', authorIds);
-                    if (profiles) await db.userProfile.bulkPut(profiles);
-                }
-                
-                const commentsToStore: LocalComment[] = [];
-                const imagesToStore: LocalCommentImage[] = [];
-
-                remoteComments.forEach(comment => {
-                    const { social_comment_images, ...commentData } = comment;
-                    commentsToStore.push({ ...commentData, created_at: new Date(commentData.created_at), synced: 1 });
-                    if (social_comment_images) {
-                        imagesToStore.push(...social_comment_images);
-                    }
-                });
-
-                await db.social_post_comments.bulkPut(commentsToStore);
-                await db.social_comment_images.bulkPut(imagesToStore);
-            }
-        } catch (err) {
-            console.error('Failed to fetch and store comments:', err);
-        }
-    }, [postId, supabase]);
-
+    // **UPDATED**: This button now only triggers a sync of local changes.
+    // The full reconciliation is handled by the main feed.
     const handleReloadClick = async () => {
         setIsReloading(true);
         try {
-            await fetchAndStoreComments();
+            // We can still trigger a sync for any pending local changes.
             await syncLocalComments();
         } finally {
             setIsReloading(false);
         }
     };
-
-    useEffect(() => {
-        if (userProfile?.user_id && isDbReady) {
-            fetchAndStoreComments();
-            syncLocalComments();
-        }
-    }, [userProfile?.user_id, isDbReady, fetchAndStoreComments]);
     
-    if (!allComments) return <div className='comment-block'>Loading comments...</div>;
+    if (!allComments) {
+        return <div className='comment-block'></div>;
+    }
     
     const rootComments = allComments.filter(c => c.parent_comment_id === null).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
     const displayedRootComments = rootComments.slice(0, visibleComments);
@@ -357,7 +398,7 @@ export default function CommentsSection({ postId }: { postId: number }) {
                     onClick={handleReloadClick}
                     disabled={isReloading}
                 >
-                    {isReloading ? 'Reloading comments...' : 'Reload comments'}
+                    {isReloading ? 'Reloading...' : 'Reload'}
                 </button>
             </div>
             {rootComments.length === 0 ? (

@@ -5,119 +5,143 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import Feed from './Feed';
 import AddPostButton from './AddPostButton';
 import { db } from '@/app/lib/local-db';
-import type { LocalPost, LocalUserProfile } from '@/app/lib/local-db';
+import type { LocalPost, LocalUserProfile, LocalComment, LocalCommentImage } from '@/app/lib/local-db';
 import { useUser } from '@/app/context/user-context';
 import { syncLocalPosts } from '@/app/lib/supabase-sync-utils';
 import { SlRefresh } from "react-icons/sl";
+import { trackEvent } from '@/app/lib/analytics';
+import { RealtimeChannel } from '@supabase/supabase-js';
 
-// Helper Component for the floating button (unchanged)
-const NewPostsButton = ({ count, onClick }: { count: number; onClick: () => void }) => {
+const NewPostsButton = ({ onClick }: { onClick: () => void }) => {
     return (
         <button onClick={onClick} className="new-posts-button">
             <SlRefresh className="mr-2" />
-            Show {count} New {count > 1 ? 'Posts' : 'Post'}
+            Show New Posts
         </button>
     );
 };
 
-// Custom hook for intervals (unchanged)
-function useInterval(callback: () => void, delay: number | null) {
-    const savedCallback = useRef<() => void>();
-    useEffect(() => { savedCallback.current = callback; }, [callback]);
-    useEffect(() => {
-        function tick() { if (savedCallback.current) savedCallback.current(); }
-        if (delay !== null) {
-            const id = setInterval(tick, delay);
-            return () => clearInterval(id);
-        }
-    }, [delay]);
-}
-
-// --- The Main FeedContainer Component ---
 export default function FeedContainer() {
-    // **UPDATED**: Destructure the new 'isDbReady' state from the context.
     const { userProfile, loading: userLoading, supabase, isDbReady } = useUser();
-    const [newPostCount, setNewPostCount] = useState(0);
+    const [hasNewPosts, setHasNewPosts] = useState(false);
+    const initialFetchComplete = useRef(false);
+    const [isInitialLoading, setIsInitialLoading] = useState(true);
+    const channelRef = useRef<RealtimeChannel | null>(null);
 
     const posts = useLiveQuery(
-        () => db.social_posts.orderBy('created_at').reverse().toArray(),
+        () => db.social_posts
+                .orderBy('created_at')
+                .reverse()
+                .filter(post => post.is_deleted !== true)
+                .toArray(),
         [] 
     );
 
-    const prevPostCount = useRef(posts?.length || 0);
-
-    const syncAndReconcileFeed = useCallback(async () => {
+    const syncAndReconcileFeed = useCallback(async (isInitialLoad = false) => {
         if (!supabase || !navigator.onLine) return;
         
-        console.log('Running full feed reconciliation...');
         try {
-            const { data: remotePosts, error } = await supabase.rpc('get_feed_for_user');
-            if (error) throw error;
+            const { data: remotePosts, error: postsError } = await supabase.rpc('get_feed_for_user');
+            if (postsError) throw postsError;
 
-            if (remotePosts) {
+            await db.social_posts.clear();
+            await db.social_post_comments.clear();
+            await db.social_comment_images.clear();
+            await db.userProfile.clear();
+
+            if (remotePosts && remotePosts.length > 0) {
                 const postsToStore: LocalPost[] = remotePosts.map(p => ({ ...p, synced: 1 }));
                 await db.social_posts.bulkPut(postsToStore);
+                
+                const postAuthorIds = [...new Set(remotePosts.map(p => p.author_id))];
+                const postIds = remotePosts.map(p => p.id);
+                
+                const { data: remoteComments, error: commentsError } = await supabase.from('social_post_comments').select('*, social_comment_images(*)').in('post_id', postIds);
+                if (commentsError) throw commentsError;
+                
+                if (remoteComments) {
+                    const commentAuthorIds = [...new Set(remoteComments.map(c => c.author_id))];
+                    const allAuthorIds = [...new Set([...postAuthorIds, ...commentAuthorIds])];
 
-                const authorIds = [...new Set(remotePosts.map(p => p.author_id))];
-                if (authorIds.length > 0) {
-                    const { data: profiles, error: profileError } = await supabase.from('user_profile').select('*').in('user_id', authorIds);
-                    if (profileError) throw profileError;
-                    if (profiles) await db.userProfile.bulkPut(profiles);
+                    if (allAuthorIds.length > 0) {
+                        const { data: profiles, error: profileError } = await supabase.from('user_profile').select('*').in('user_id', allAuthorIds);
+                        if (profileError) throw profileError;
+                        if (profiles) await db.userProfile.bulkPut(profiles);
+                    }
+
+                    const commentsToStore: LocalComment[] = [];
+                    const imagesToStore: LocalCommentImage[] = [];
+                    remoteComments.forEach(comment => {
+                        const { social_comment_images, ...commentData } = comment;
+                        commentsToStore.push({ ...commentData, created_at: new Date(commentData.created_at), synced: 1 });
+                        if (social_comment_images) { imagesToStore.push(...social_comment_images); }
+                    });
+                    
+                    await db.social_post_comments.bulkPut(commentsToStore);
+                    await db.social_comment_images.bulkPut(imagesToStore);
                 }
             }
             
-            setNewPostCount(0);
-            console.log('Feed reconciliation complete.');
+            setHasNewPosts(false);
+            if (isInitialLoad) {
+                setIsInitialLoading(false);
+            }
         } catch (err) {
             console.error('Error during feed reconciliation:', err);
         }
     }, [supabase]);
 
-    const pollForNewPosts = useCallback(async () => {
-        if (!navigator.onLine || document.hidden || !supabase || !posts || posts.length === 0) return;
-        
-        const latestKnownTimestamp = posts[0].created_at;
-        const { data, error } = await supabase.rpc('check_for_new_posts', { latest_known_timestamp: latestKnownTimestamp });
-        
-        if (error) console.error("Failed to check for new posts:", JSON.stringify(error, null, 2));
-        else if (data > 0) setNewPostCount(data);
-    }, [posts, supabase]);
-
-    useInterval(pollForNewPosts, 30000);
-
     useEffect(() => {
-        const currentPostCount = posts?.length || 0;
-        if (currentPostCount > prevPostCount.current) {
-            pollForNewPosts();
+        if (!supabase) return;
+
+        if (!channelRef.current) {
+            channelRef.current = supabase.channel('public:realtime_posts')
+                .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'realtime_posts' }, 
+                (payload) => {
+                    if (payload.new.author_id !== userProfile?.user_id) {
+                        setHasNewPosts(true);
+                    }
+                })
+                .subscribe();
         }
-        prevPostCount.current = currentPostCount;
-    }, [posts, pollForNewPosts]);
+
+        return () => {
+            if (channelRef.current) {
+                supabase.removeChannel(channelRef.current);
+                channelRef.current = null;
+            }
+        };
+    }, [supabase, userProfile?.user_id]);
 
     useEffect(() => {
-        if (userProfile?.user_id) {
+        if (userProfile?.user_id && isDbReady && !initialFetchComplete.current) {
+            initialFetchComplete.current = true;
             syncLocalPosts();
-            syncAndReconcileFeed();
+            syncAndReconcileFeed(true);
         }
-    }, [userProfile, syncAndReconcileFeed]);
+    }, [userProfile, isDbReady, syncAndReconcileFeed]);
 
     const handleShowNewPosts = () => {
-        syncAndReconcileFeed();
+        syncAndReconcileFeed(false);
     };
 
     const handleDeletePost = async (postId: number) => {
         if (!supabase) return;
+        trackEvent('post_deleted', { post_id: postId });
         await db.social_posts.update(postId, { is_deleted: true, synced: 0 });
         syncLocalPosts();
     };
 
     const handleUpdatePost = async (postId: number, newContent: string) => {
         if (!supabase) return;
+        trackEvent('post_updated', { post_id: postId });
         await db.social_posts.update(postId, { post_content: newContent, post_status: 'pending', synced: 0 });
         syncLocalPosts();
     };
 
     const handleReportPost = async (postId: number) => {
         if (!supabase) return;
+        trackEvent('post_reported', { post_id: postId });
         await db.social_posts.update(postId, { post_status: 'reported' });
         const { error } = await supabase.rpc('report_post', { post_id_to_report: postId });
         if (error) {
@@ -126,24 +150,39 @@ export default function FeedContainer() {
         }
     };
 
-    // **UPDATED**: The component now waits for the user profile AND the database to be ready.
-    if (userLoading || !isDbReady || !posts) {
+    const handleBlockUser = async (userIdToBlock: string) => {
+        if (!supabase) return;
+        trackEvent('user_blocked', { blocked_user_id: userIdToBlock });
+        
+        const { error } = await supabase.rpc('block_user', { user_to_block_id: userIdToBlock });
+
+        if (error) {
+            // **THE FIX**: Use JSON.stringify to see the full error object.
+            console.error('Failed to block user:', JSON.stringify(error, null, 2));
+        } else {
+            console.log(`User ${userIdToBlock} blocked. Refreshing feed.`);
+            await syncAndReconcileFeed(false);
+        }
+    };
+
+    if (userLoading || !isDbReady || isInitialLoading) {
         return <div className="feed-container">Loading feed...</div>;
     }
 
     return (
         <>
-            {newPostCount > 0 && (
-                <NewPostsButton count={newPostCount} onClick={handleShowNewPosts} />
+            {hasNewPosts && (
+                <NewPostsButton onClick={handleShowNewPosts} />
             )}
             
             <AddPostButton />
             <Feed 
-                posts={posts} 
+                posts={posts || []}
                 userProfile={userProfile}
                 onDeletePost={handleDeletePost}
                 onUpdatePost={handleUpdatePost}
                 onReportPost={handleReportPost}
+                onBlockUser={handleBlockUser}
             />
         </>
     );

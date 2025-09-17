@@ -3,7 +3,7 @@ import FeedContainer from './components/FeedContainer';
 import { createServerSupabaseClient } from '@/app/lib/server-supabase';
 import { redirect } from 'next/navigation';
 import { UserProvider } from './context/user-context';
-import { SlHome, SlPeople, SlSpeech, SlBubbles, SlPieChart, SlBell } from "react-icons/sl";
+import { SlHome, SlPeople, SlBubbles, SlPieChart, SlBell } from "react-icons/sl";
 import { cookies } from 'next/headers';
 import LogoutButton from './components/LogoutButton';
 
