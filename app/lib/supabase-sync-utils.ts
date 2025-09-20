@@ -1,16 +1,15 @@
-import { createBrowserClient } from '@supabase/ssr';
+// lib/supabase-sync-utils.ts (Complete File)
+
 import { db } from './local-db';
 import { LocalPost, LocalComment } from './local-db';
-
-const supabase = createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+import type { OutputFileEntry } from '@uploadcare/react-uploader';
+import supabase from '@/app/lib/client-supabase';
 
 let isSyncingPosts = false;
 let isSyncingComments = false;
+let isSyncingReactions = false;
 
-export async function createLocalPost(newPostData: Partial<LocalPost>) {
+export async function createLocalPost(newPostData: Partial<LocalPost>, uploadedFiles: OutputFileEntry[] = []) {
     try {
         const tempId = -Date.now();
         const localPost: LocalPost = {
@@ -26,6 +25,7 @@ export async function createLocalPost(newPostData: Partial<LocalPost>) {
             totalreactions: 0,
             totalcomments: 0,
             totalshares: 0,
+            images: uploadedFiles,
         };
         await db.social_posts.add(localPost);
         return localPost;
@@ -78,14 +78,56 @@ export async function syncLocalPosts() {
                         post_embedding: embedding,
                         moderation_data: moderationData,
                     };
-                    const { data, error } = await supabase.from('social_posts').insert(postToInsert).select().single();
-                    if (error) throw error;
-                    if (data) {
+                    
+                    const { data: newPostData, error: postError } = await supabase.from('social_posts').insert(postToInsert).select().single();
+                    if (postError) throw postError;
+
+                    if (newPostData) {
+                        if (post.images && post.images.length > 0) {
+                            const imagesToInsert = post.images.map(file => ({
+                                post_id: newPostData.id,
+                                user_id: newPostData.author_id,
+                                image_url: file.cdnUrl,
+                            }));
+                            
+                            const { data: newImageData, error: imageError } = await supabase.from('social_post_images').insert(imagesToInsert).select();
+                            if (imageError) throw imageError;
+                            if (newImageData) {
+                                await db.social_post_images.bulkPut(newImageData);
+                            }
+                        }
+
                         await db.social_posts.delete(tempId);
-                        const finalPost: LocalPost = { ...data, synced: 1 };
+                        const { images, ...restOfPost } = post; 
+                        const finalPost: LocalPost = { ...restOfPost, ...newPostData, synced: 1 };
                         await db.social_posts.put(finalPost);
                     }
                 } else {
+                    const { data: { user } } = await supabase.auth.getUser();
+                    if (post.author_id !== user?.id) {
+                        console.error(`RLS PRE-CHECK FAILED: Current user (${user?.id}) is not the author (${post.author_id}) of post ${post.id}. Skipping sync.`);
+                        continue;
+                    }
+
+                    if (post.deletedImages && post.deletedImages.length > 0) {
+                        const { error: deleteError } = await supabase.from('social_post_images').delete().in('id', post.deletedImages);
+                        if (deleteError) throw deleteError;
+                        await db.social_post_images.bulkDelete(post.deletedImages);
+                    }
+
+                    if (post.newImages && post.newImages.length > 0) {
+                        const imagesToInsert = post.newImages.map(file => ({
+                            post_id: post.id,
+                            user_id: post.author_id,
+                            image_url: file.cdnUrl
+                        }));
+                        const { data: newImageData, error: imageError } = await supabase.from('social_post_images').insert(imagesToInsert).select();
+                        if (imageError) throw imageError;
+                        if (newImageData) {
+                            await db.social_post_images.bulkPut(newImageData);
+                        }
+                    }
+                    
                     const postToUpdate = {
                         post_content: post.post_content,
                         post_status: newStatus,
@@ -97,7 +139,12 @@ export async function syncLocalPosts() {
                     const { data, error } = await supabase.from('social_posts').update(postToUpdate).eq('id', post.id).select().single();
                     if (error) throw error;
                     if (data) {
-                        await db.social_posts.update(post.id, { ...data, synced: 1 });
+                        await db.social_posts.update(post.id, { 
+                            ...data, 
+                            synced: 1,
+                            newImages: [],
+                            deletedImages: []
+                        });
                     }
                 }
             } catch (syncError) {
@@ -114,7 +161,7 @@ export async function syncLocalPosts() {
 export async function syncLocalComments() {
     if (isSyncingComments) return;
     if (!navigator.onLine) return;
-
+ 
     try {
         isSyncingComments = true;
         
@@ -123,7 +170,7 @@ export async function syncLocalComments() {
             isSyncingComments = false;
             return;
         }
-
+ 
         for (const comment of unsyncedComments) {
             try {
                 if (comment.is_deleted) {
@@ -136,7 +183,7 @@ export async function syncLocalComments() {
                         headers: { 'Content-Type': 'application/json' }, 
                         body: JSON.stringify({ content: comment.comment_content, type: 'comment' }) 
                     }).then(res => res.json());
-
+ 
                     const newStatus = isFlagged ? 'flagged' : 'approved';
                     
                     const { data: newCommentData, error: commentError } = await supabase.from('social_post_comments')
@@ -149,25 +196,25 @@ export async function syncLocalComments() {
                             status: newStatus, 
                             moderation_data: moderationData 
                         }).select().single();
-
+ 
                     if (commentError) throw commentError;
-
-                    if (newCommentData && comment.images && comment.images.length > 0) {
-                        const imagesToInsert = comment.images.map(file => ({
-                            comment_id: newCommentData.id,
-                            user_id: newCommentData.author_id,
-                            image_url: file.cdnUrl
-                        }));
-
-                        const { data: newImageData, error: imageError } = await supabase.from('social_comment_images').insert(imagesToInsert).select();
-                        if (imageError) throw imageError;
-                        
-                        if (newImageData) {
-                            await db.social_comment_images.bulkPut(newImageData);
-                        }
-                    }
-
+ 
                     if (newCommentData) {
+                        if (comment.images && comment.images.length > 0) {
+                            const imagesToInsert = comment.images.map(file => ({
+                                comment_id: newCommentData.id,
+                                user_id: newCommentData.author_id,
+                                image_url: file.cdnUrl
+                            }));
+     
+                            const { data: newImageData, error: imageError } = await supabase.from('social_comment_images').insert(imagesToInsert).select();
+                            if (imageError) throw imageError;
+                            
+                            if (newImageData) {
+                                await db.social_comment_images.bulkPut(newImageData);
+                            }
+                        }
+     
                         await db.social_post_comments.delete(tempId);
                         const { images, ...restOfComment } = comment;
                         await db.social_post_comments.put({ ...restOfComment, ...newCommentData, created_at: new Date(newCommentData.created_at), synced: 1 });
@@ -175,16 +222,16 @@ export async function syncLocalComments() {
                 } else { 
                     const { data: { user } } = await supabase.auth.getUser();
                     if (comment.author_id !== user?.id) {
-                        console.error(`RLS PRE-CHECK FAILED: Current user (${user?.id}) is not the author (${comment.author_id}) of comment ${comment.id}. Skipping sync for this item.`);
+                        console.error(`RLS PRE-CHECK FAILED: Current user (${user?.id}) is not the author (${comment.author_id}) of comment ${comment.id}. Skipping sync.`);
                         continue;
                     }
-
+ 
                     if (comment.deletedImages && comment.deletedImages.length > 0) {
                         const { error: deleteError } = await supabase.from('social_comment_images').delete().in('id', comment.deletedImages);
                         if (deleteError) throw deleteError;
                         await db.social_comment_images.bulkDelete(comment.deletedImages);
                     }
-
+ 
                     if (comment.newImages && comment.newImages.length > 0) {
                         const imagesToInsert = comment.newImages.map(file => ({
                             comment_id: comment.id,
@@ -197,7 +244,7 @@ export async function syncLocalComments() {
                            await db.social_comment_images.bulkPut(newImageData);
                         }
                     }
-
+ 
                     const { isFlagged, moderationData } = await fetch('/api/moderate', { 
                         method: 'POST', 
                         headers: { 'Content-Type': 'application/json' }, 
@@ -235,5 +282,70 @@ export async function syncLocalComments() {
         console.error('Error during comment synchronization process:', error);
     } finally {
         isSyncingComments = false;
+    }
+}
+
+export async function syncLocalReactions() {
+    if (isSyncingReactions) return;
+    if (!navigator.onLine) return;
+
+    try {
+        isSyncingReactions = true;
+
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+
+        // Sync Post Reactions
+        const unsyncedPostReactions = await db.social_posts_reactions.where({ synced: 0, user_id: user.id }).toArray();
+        for (const reaction of unsyncedPostReactions) {
+            try {
+                if (reaction.is_deleted) {
+                    await supabase.rpc('delete_post_reaction', { p_post_id: reaction.post_id });
+                    await db.social_posts_reactions.delete(reaction.id);
+                } else {
+                    await supabase.rpc('delete_post_reaction', { p_post_id: reaction.post_id });
+                    const { data, error } = await supabase.rpc('add_post_reaction', { 
+                        p_post_id: reaction.post_id, 
+                        p_reaction_id: reaction.reaction_id 
+                    });
+                    if (error) throw error;
+                    
+                    const newId = data.id;
+                    await db.social_posts_reactions.delete(reaction.id);
+                    await db.social_posts_reactions.put({ ...reaction, id: newId, synced: 1, is_deleted: false });
+                }
+            } catch (syncError) {
+                console.error(`Failed to sync post reaction for post ${reaction.post_id}:`, syncError);
+            }
+        }
+
+        // Sync Comment Reactions
+        const unsyncedCommentReactions = await db.social_comments_reactions.where({ synced: 0, user_id: user.id }).toArray();
+        for (const reaction of unsyncedCommentReactions) {
+            try {
+                if (reaction.is_deleted) {
+                    await supabase.rpc('delete_comment_reaction', { p_comment_id: reaction.comment_id });
+                    await db.social_comments_reactions.delete(reaction.id);
+                } else {
+                    await supabase.rpc('delete_comment_reaction', { p_comment_id: reaction.comment_id });
+                    const { data, error } = await supabase.rpc('add_comment_reaction', { 
+                        p_comment_id: reaction.comment_id, 
+                        p_reaction_id: reaction.reaction_id 
+                    });
+                    if (error) throw error;
+                    
+                    const newId = data.id;
+                    await db.social_comments_reactions.delete(reaction.id);
+                    await db.social_comments_reactions.put({ ...reaction, id: newId, synced: 1, is_deleted: false });
+                }
+            } catch (syncError) {
+                console.error(`Failed to sync comment reaction for comment ${reaction.comment_id}:`, syncError);
+            }
+        }
+
+    } catch (error) {
+        console.error('Error during reactions synchronization process:', error);
+    } finally {
+        isSyncingReactions = false;
     }
 }

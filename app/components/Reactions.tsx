@@ -1,0 +1,138 @@
+// app/components/Reactions.tsx
+
+'use client';
+
+import { useState } from 'react';
+import { useLiveQuery } from 'dexie-react-hooks';
+import { db, LocalPostReaction, LocalCommentReaction, LocalReactionType, LocalUserProfile } from '@/app/lib/local-db';
+import Image from 'next/image';
+import { SlLike } from 'react-icons/sl';
+import { syncLocalReactions } from '@/app/lib/supabase-sync-utils';
+// --- NEW --- Import the analytics tracking function
+import { trackEvent } from '@/app/lib/analytics';
+
+interface ReactionsProps {
+    entityId: number;
+    entityType: 'post' | 'comment';
+    userProfile: LocalUserProfile | null;
+    displayStyle?: 'button' | 'text';
+}
+
+export default function Reactions({ entityId, entityType, userProfile, displayStyle = 'button' }: ReactionsProps) {
+    const [isPopupVisible, setIsPopupVisible] = useState(false);
+    let hoverTimeout: NodeJS.Timeout;
+
+    const reactionTypes = useLiveQuery(() => db.social_reactions.toArray(), []);
+    const reactionTable = entityType === 'post' ? db.social_posts_reactions : db.social_comments_reactions;
+    const queryKey = entityType === 'post' ? 'post_id' : 'comment_id';
+
+    const currentUserReaction = useLiveQuery(
+        () => userProfile 
+            ? reactionTable.where({ [queryKey]: entityId, user_id: userProfile.user_id }).and(r => !r.is_deleted).first() 
+            : undefined,
+        [entityId, userProfile]
+    );
+
+    const currentReactionType = reactionTypes?.find(
+        rt => rt.id === currentUserReaction?.reaction_id
+    );
+
+    const handleMouseEnter = () => { clearTimeout(hoverTimeout); setIsPopupVisible(true); };
+    const handleMouseLeave = () => { hoverTimeout = setTimeout(() => { setIsPopupVisible(false); }, 300); };
+
+    const handleReactionSelect = async (reaction: LocalReactionType) => {
+        if (!userProfile) return;
+        setIsPopupVisible(false);
+
+        if (currentUserReaction && currentUserReaction.reaction_id === reaction.id) {
+            await reactionTable.update(currentUserReaction.id, { is_deleted: true, synced: 0 });
+            if (entityType === 'post') {
+                await db.social_posts.where({ id: entityId }).modify(post => { if (post.totalreactions > 0) post.totalreactions--; });
+            }
+            // --- NEW --- Track the event
+            trackEvent('reaction_removed', { entity_id: entityId, entity_type: entityType, reaction_id: reaction.id });
+            syncLocalReactions();
+            return;
+        }
+
+        if (currentUserReaction) {
+            await reactionTable.update(currentUserReaction.id, { reaction_id: reaction.id, synced: 0 });
+        } else {
+            const newReaction = { [queryKey]: entityId, user_id: userProfile.user_id, reaction_id: reaction.id, synced: 0, is_deleted: false };
+            await reactionTable.add(newReaction as any);
+            if (entityType === 'post') {
+                await db.social_posts.where({ id: entityId }).modify(post => { post.totalreactions++; });
+            }
+        }
+        
+        // --- NEW --- Track the event
+        trackEvent('reaction_added', { entity_id: entityId, entity_type: entityType, reaction_id: reaction.id });
+        syncLocalReactions();
+    };
+    
+    const handleButtonClick = async () => {
+        if (!userProfile) return;
+        
+        if (currentUserReaction) {
+            const reactionId = currentUserReaction.reaction_id;
+            await reactionTable.update(currentUserReaction.id, { is_deleted: true, synced: 0 });
+            if (entityType === 'post') {
+                await db.social_posts.where({ id: entityId }).modify(post => { if (post.totalreactions > 0) post.totalreactions--; });
+            }
+            // --- NEW --- Track the event
+            trackEvent('reaction_removed', { entity_id: entityId, entity_type: entityType, reaction_id: reactionId });
+        } else {
+            const defaultReactionId = 1; // Assuming "Like" is ID 1
+            const newReaction = { [queryKey]: entityId, user_id: userProfile.user_id, reaction_id: defaultReactionId, synced: 0, is_deleted: false };
+            await reactionTable.add(newReaction as any);
+            if (entityType === 'post') {
+                await db.social_posts.where({ id: entityId }).modify(post => { post.totalreactions++; });
+            }
+            // --- NEW --- Track the event
+            trackEvent('reaction_added', { entity_id: entityId, entity_type: entityType, reaction_id: defaultReactionId });
+        }
+
+        syncLocalReactions();
+    };
+    
+    const buttonStyle = currentReactionType ? { color: currentReactionType.colour } : {};
+    const containerClassName = displayStyle === 'button' ? 'footer-action' : 'comment-response';
+
+    return (
+        <div 
+            className="reactions-container"
+            onMouseEnter={handleMouseEnter}
+            onMouseLeave={handleMouseLeave}
+        >
+            {isPopupVisible && reactionTypes && (
+                <div className="reactions-popup">
+                    {reactionTypes.map(reaction => (
+                        <Image
+                            key={reaction.id}
+                            src={reaction.reaction_icon}
+                            alt={reaction.reaction}
+                            width={32}
+                            height={32}
+                            className="reaction-icon"
+                            onClick={() => handleReactionSelect(reaction)}
+                        />
+                    ))}
+                </div>
+            )}
+            
+            <div className={containerClassName} onClick={handleButtonClick} style={buttonStyle}>
+                {currentReactionType ? (
+                    <>
+                        <Image src={currentReactionType.reaction_icon} alt={currentReactionType.reaction} width={16} height={16} className='post-icon' />
+                        {currentReactionType.reacted_text}
+                    </>
+                ) : (
+                    <>
+                        {displayStyle === 'button' && <SlLike className='post-icon' size={16} />}
+                        Like
+                    </>
+                )}
+            </div>
+        </div>
+    );
+}

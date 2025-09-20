@@ -1,5 +1,16 @@
+// lib/bbcode-parser.ts
+
 export function parseBBCode(text: string): string {
+  // Return an empty string if the input is null or undefined to prevent errors
+  if (!text) {
+    return '';
+  }
+
   let html = text;
+
+  // --- NEW --- Convert @[DisplayName](user_id) mentions into clickable links
+  // This rule should run first to avoid conflicts with other tags like [b]
+  html = html.replace(/@\[(.*?)\]\((.*?)\)/g, '<a href="/profile/$2" class="mention-link">@$1</a>');
 
   html = html.replace(/\[ml\](.*?)\[\/ml\]/gi, "$1");
   html = html.replace(/\[b\](.*?)\[\/b\]/gi, "<strong>$1</strong>");

@@ -10,6 +10,9 @@ import type { OutputFileEntry, OutputCollectionState } from '@uploadcare/react-u
 import { LocalUserProfile } from '@/app/lib/local-db';
 import { db } from '@/app/lib/local-db';
 import { useUser } from '@/app/context/user-context';
+import { MentionsInput, Mention } from 'react-mentions';
+import '@/app/styles/mentions-input.css';
+
 
 interface AddCommentInputProps {
     userProfile: LocalUserProfile | null;
@@ -24,7 +27,6 @@ export default function AddCommentInput({ userProfile, onAddComment, parentId = 
     const [uploadedFiles, setUploadedFiles] = useState<OutputFileEntry[]>([]);
     
     const containerRef = useRef<HTMLDivElement>(null);
-    const textareaRef = useRef<HTMLTextAreaElement>(null);
 
     const defaultAvatar = '/default-avatar.jpg';
     
@@ -33,22 +35,10 @@ export default function AddCommentInput({ userProfile, onAddComment, parentId = 
     }
     
     const avatarUrl = userProfile.profileImage || defaultAvatar;
-
-    useEffect(() => {
-        const textarea = textareaRef.current;
-        if (textarea) {
-            textarea.style.height = 'auto';
-            textarea.style.height = `${textarea.scrollHeight}px`;
-        }
-    }, [commentContent]);
     
     const handleCommentSubmit = () => {
         if (commentContent.trim() || uploadedFiles.length > 0) {
             onAddComment(commentContent, parentId, uploadedFiles);
-            const textarea = textareaRef.current;
-            if (textarea) {
-                textarea.style.height = 'auto';
-            }
             setCommentContent('');
             setUploadedFiles([]);
             setShowEmojiPicker(false);
@@ -83,55 +73,81 @@ export default function AddCommentInput({ userProfile, onAddComment, parentId = 
         setCommentContent(prevContent => prevContent + emojiData.emoji);
     };
 
+    const fetchUsers = async (query: string, callback: (data: { id: string; display: string }[]) => void) => {
+        if (!query) return;
+        const users = await db.userProfile
+            .where('displayName')
+            .startsWithIgnoreCase(query)
+            .or('username')
+            .startsWithIgnoreCase(query)
+            .limit(10)
+            .toArray();
+
+        const formattedUsers = users.map(user => ({
+            // --- UPDATED --- Use the username for the ID to create user-friendly links
+            id: user.username,
+            display: user.displayName || user.username,
+        }));
+        callback(formattedUsers);
+    };
+
     return (
         <div className='add-comment-container'>
-            <div className='uploader-regular-container'>
-                <FileUploaderRegular
-                    pubkey={process.env.NEXT_PUBLIC_UPLOADCARE_PUBLIC_KEY || ''}
-                    multiple
-                    imgOnly
-                    sourceList='local, url, camera, gdrive'
-                    onChange={handleUploadChange}
-                    classNameUploader="uc-light"
-                />
-            </div>
-
-            {uploadedFiles.length > 0 && (
-                <div className="image-preview-container">
-                    {/* **THE FIX**: We get the 'index' from the map function... */}
-                    {uploadedFiles.map((file, index) => (
-                        // ...and use it as a fallback key if file.uuid doesn't exist yet.
-                        <div key={file.uuid || index} className="thumbnail">
-                            {file.cdnUrl ? (
-                                <Image
-                                    src={`${file.cdnUrl}-/preview/100x100/`}
-                                    alt={file.fileInfo?.originalFilename || 'preview'}
-                                    width={60}
-                                    height={60}
-                                    className="thumbnail-image"
-                                />
-                            ) : (
-                                <div className="thumbnail-loader"></div>
-                            )}
-                            <button onClick={() => handleRemoveFile(file.uuid)} className="remove-button">×</button>
-                        </div>
-                    ))}
-                </div>
-            )}
-
             <div className='add-comment'>
                 <div className='comment-avatar'>
                     <Image className='comment-avatar' src={avatarUrl} alt="User Avatar" width={40} height={40} />
                 </div>
-                <div className='comment-textarea flex-1'>
-                    <textarea 
-                        ref={textareaRef}
-                        placeholder="Write a comment..."
+                
+                <div className='comment-textarea'>
+                    <MentionsInput
                         value={commentContent}
                         onChange={(e) => setCommentContent(e.target.value)}
-                        rows={1}
+                        placeholder="Write a comment..."
+                        className="mentions-input-comment"
+                        a11ySuggestionsListLabel={"Suggested users for mention"}
+                        singleLine={true}
+                    >
+                        <Mention
+                            trigger="@"
+                            data={fetchUsers}
+                            markup="@[__display__](__id__)"
+                            displayTransform={(id, display) => `@${display}`}
+                            className="mentions-mention"
+                        />
+                    </MentionsInput>
+                </div>
+                
+                <div className='uploader-regular-container'>
+                    <FileUploaderRegular
+                        pubkey={process.env.NEXT_PUBLIC_UPLOADCARE_PUBLIC_KEY || ''}
+                        multiple
+                        imgOnly
+                        sourceList='local, url, camera, gdrive'
+                        onChange={handleUploadChange}
+                        classNameUploader="uc-light"
                     />
                 </div>
+
+                {uploadedFiles.length > 0 && (
+                    <div className="image-preview-container">
+                        {uploadedFiles.map((file, index) => (
+                            <div key={file.uuid || index} className="thumbnail">
+                                {file.cdnUrl ? (
+                                    <Image
+                                        src={`${file.cdnUrl}-/preview/100x100/`}
+                                        alt={file.fileInfo?.originalFilename || 'preview'}
+                                        width={60}
+                                        height={60}
+                                        className="thumbnail-image"
+                                    />
+                                ) : (
+                                    <div className="thumbnail-loader"></div>
+                                )}
+                                <button onClick={() => handleRemoveFile(file.uuid)} className="remove-button">×</button>
+                            </div>
+                        ))}
+                    </div>
+                )}
                 <div ref={containerRef} className="relative flex items-center space-x-2 mt-[6px]">
                     <SlEmotsmile 
                         className='post-icon cursor-pointer' 

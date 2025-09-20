@@ -1,18 +1,17 @@
 'use client';
 
-import { createContext, useContext, useState, useEffect } from 'react';
-import { createBrowserClient } from '@supabase/ssr';
+import { createContext, useContext, useState, useEffect, useMemo } from 'react';
 import { User, SupabaseClient } from '@supabase/supabase-js';
-import { syncLocalPosts, syncLocalComments } from '@/app/lib/supabase-sync-utils';
-// **NEW**: Import the local database instance.
+// --- UPDATED --- Import the new sync function
+import { syncLocalPosts, syncLocalComments, syncLocalReactions } from '@/app/lib/supabase-sync-utils';
 import { db } from '@/app/lib/local-db';
+import supabase from '@/app/lib/client-supabase';
 
-// **UPDATED**: The context now also provides the 'isDbReady' state.
 const UserContext = createContext<{ 
     user: User | null; 
     loading: boolean; 
     userProfile: any | null;
-    supabase: SupabaseClient | null; 
+    supabase: SupabaseClient;
     isOffline: boolean;
     isDbReady: boolean;
 } | undefined>(undefined);
@@ -24,15 +23,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     const [isOffline, setIsOffline] = useState(
         typeof window !== 'undefined' ? !window.navigator.onLine : false
     );
-    // **NEW**: State to track if the local Dexie DB is initialized.
     const [isDbReady, setIsDbReady] = useState(false);
-
-    const [supabase] = useState(() => 
-        createBrowserClient(
-            process.env.NEXT_PUBLIC_SUPABASE_URL!,
-            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-        )
-    );
 
     useEffect(() => {
         const fetchUser = async () => {
@@ -59,7 +50,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         return () => {
             subscription.unsubscribe();
         };
-    }, [supabase]);
+    }, []);
 
     useEffect(() => {
         const handleOnline = () => {
@@ -67,6 +58,8 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
             setIsOffline(false);
             syncLocalPosts();
             syncLocalComments();
+            // --- NEW --- Also sync reactions when connection is restored
+            syncLocalReactions();
         };
 
         const handleOffline = () => {
@@ -83,21 +76,27 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         };
     }, []);
 
-    // **NEW**: This useEffect handles the initialization of the local database.
     useEffect(() => {
-        // The db.open() method returns a promise that resolves when the DB is ready.
         db.open().then(() => {
             console.log("Local DB is ready.");
             setIsDbReady(true);
         }).catch(err => {
             console.error("Failed to open local DB:", err);
-            setIsDbReady(false); // You might want to show an error state
+            setIsDbReady(false);
         });
-    }, []); // Empty dependency array ensures this runs only once.
+    }, []);
+
+    const value = useMemo(() => ({
+        user,
+        loading,
+        userProfile,
+        supabase,
+        isOffline,
+        isDbReady
+    }), [user, loading, userProfile, isOffline, isDbReady]);
 
     return (
-        // **UPDATED**: We pass the 'isDbReady' state down through the context.
-        <UserContext.Provider value={{ user, loading, userProfile, supabase, isOffline, isDbReady }}>
+        <UserContext.Provider value={value}>
             {children}
         </UserContext.Provider>
     );

@@ -5,11 +5,18 @@ import { useUser } from './context/user-context';
 import { createLocalPost, syncLocalPosts } from './lib/supabase-sync-utils';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from './lib/local-db';
-import { createClientSupabaseClient } from './lib/client-supabase';
+// --- UPDATED --- Import the shared client instance directly
+import supabase from './lib/client-supabase';
 import { SlArrowDown } from "react-icons/sl";
 import Image from 'next/image';
-// **UPDATED**: Import our new tracking utility
 import { trackEvent } from './lib/analytics';
+import { FileUploaderRegular } from '@uploadcare/react-uploader';
+import '@uploadcare/react-uploader/core.css';
+import type { OutputFileEntry, OutputCollectionState } from '@uploadcare/react-uploader';
+import toast from 'react-hot-toast';
+import { MentionsInput, Mention } from 'react-mentions';
+import '@/app/styles/mentions-input.css';
+
 
 interface NewPostFormProps {
     onClose: () => void;
@@ -22,8 +29,10 @@ export default function NewPostForm({ onClose }: NewPostFormProps) {
     const [allowComments, setAllowComments] = useState(true);
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const supabase = createClientSupabaseClient();
+    // --- REMOVED --- The line below is no longer needed as we import the client directly
+    // const supabase = createClientSupabaseClient();
     
+    const [uploadedFiles, setUploadedFiles] = useState<OutputFileEntry[]>([]);
     const [isMenuOpen, setIsMenuOpen] = useState(false);
     const menuRef = useRef<HTMLDivElement>(null);
 
@@ -56,7 +65,33 @@ export default function NewPostForm({ onClose }: NewPostFormProps) {
         []
     );
 
+    const handleUploadChange = (data: OutputCollectionState) => {
+        setUploadedFiles(data.allEntries.filter(file => file.status === 'success'));
+    };
+
+    const handleRemoveFile = (uuid: string) => {
+        setUploadedFiles(prevFiles => prevFiles.filter(file => file.uuid !== uuid));
+    };
+
     const selectedOption = visibilityOptions?.find(opt => opt.id === visibilityId);
+
+    const fetchUsers = async (query: string, callback: (data: { id: string; display: string }[]) => void) => {
+        if (!query) return;
+        const users = await db.userProfile
+            .where('displayName')
+            .startsWithIgnoreCase(query)
+            .or('username')
+            .startsWithIgnoreCase(query)
+            .limit(10)
+            .toArray();
+
+        const formattedUsers = users.map(user => ({
+            id: user.username,
+            display: user.displayName || user.username,
+        }));
+        callback(formattedUsers);
+    };
+
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -64,14 +99,19 @@ export default function NewPostForm({ onClose }: NewPostFormProps) {
         setSubmitting(true);
 
         try {
-            if (!content.trim() || !userProfile?.user_id || !visibilityId) {
-                throw new Error('Missing content, user, or visibility selection.');
+            if (!content.trim() && uploadedFiles.length === 0) {
+                throw new Error('Post must have content or at least one image.');
+            }
+            if (!userProfile?.user_id || !visibilityId) {
+                throw new Error('Missing user or visibility selection.');
             }
 
-            // **UPDATED**: Track the 'post_created' event with its properties.
             trackEvent('post_created', {
                 visibility: selectedOption?.visible_to || 'Unknown',
-                allow_comments: allowComments
+                allow_comments: allowComments,
+                has_images: uploadedFiles.length > 0,
+                image_count: uploadedFiles.length,
+                has_mentions: content.includes('@[') 
             });
 
             await createLocalPost({
@@ -79,14 +119,17 @@ export default function NewPostForm({ onClose }: NewPostFormProps) {
                 post_content: content,
                 post_visibility: visibilityId,
                 allow_comments: allowComments,
-            });
+            }, 
+            uploadedFiles);
             
             syncLocalPosts();
-            
             setContent('');
+            setUploadedFiles([]);
             onClose();
+            toast.success('Post submitted successfully.');
         } catch (err: any) {
             setError(err.message || 'Failed to create post.');
+            toast.error(err.message || 'Failed to create post. Please try again.');
         } finally {
             setSubmitting(false);
         }
@@ -94,7 +137,6 @@ export default function NewPostForm({ onClose }: NewPostFormProps) {
 
     return (
         <form onSubmit={handleSubmit} className='flex flex-col'>
-            
             <div className="relative mb-4" ref={menuRef}>
                 <button 
                     type="button" 
@@ -143,25 +185,62 @@ export default function NewPostForm({ onClose }: NewPostFormProps) {
                 )}
             </div>
 
-            <textarea
-                className='w-full p-2 border rounded-lg mb-[8px] mt-[16px] text-lg'
-                placeholder="What's on your mind?"
+            <MentionsInput
                 value={content}
                 onChange={(e) => setContent(e.target.value)}
-                rows={4}
-            />
-
-            <div className="flex items-center mb-4">
-                <input
-                    type="checkbox"
-                    id="allowComments"
-                    checked={allowComments}
-                    onChange={(e) => setAllowComments(e.target.checked)}
-                    className="h-6 w-6 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                placeholder="What's on your mind? Mention users with @"
+                className="mentions-input"
+                a11ySuggestionsListLabel={"Suggested users for mention"}
+            >
+                <Mention
+                    trigger="@"
+                    data={fetchUsers}
+                    markup="@[__display__](__id__)"
+                    displayTransform={(id, display) => `@${display}`}
+                    className="mentions-mention"
                 />
-                <label htmlFor="allowComments" className="ml-[8px] block text-sm text-gray-900">
-                    Allow comments on this post
-                </label>
+            </MentionsInput>
+
+            {uploadedFiles.length > 0 && (
+                <div className="image-preview-container mb-4">
+                    {uploadedFiles.map((file, index) => (
+                        <div key={file.uuid || index} className="thumbnail">
+                            <Image
+                                src={`${file.cdnUrl}-/preview/100x100/`}
+                                alt={file.fileInfo?.originalFilename || 'preview'}
+                                width={60}
+                                height={60}
+                                className="thumbnail-image"
+                            />
+                            <button type="button" onClick={() => handleRemoveFile(file.uuid)} className="remove-button">×</button>
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            <div className="flex items-center justify-between mb-4">
+                <div className="uploader-regular-container">
+                    <FileUploaderRegular
+                        pubkey={process.env.NEXT_PUBLIC_UPLOADCARE_PUBLIC_KEY || ''}
+                        multiple
+                        imgOnly
+                        sourceList='local, url, camera, gdrive'
+                        onChange={handleUploadChange}
+                        classNameUploader="uc-light"
+                    />
+                </div>
+                <div className="flex items-center">
+                    <input
+                        type="checkbox"
+                        id="allowComments"
+                        checked={allowComments}
+                        onChange={(e) => setAllowComments(e.target.checked)}
+                        className="h-6 w-6 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    <label htmlFor="allowComments" className="ml-[8px] block text-sm text-gray-900">
+                        Allow comments
+                    </label>
+                </div>
             </div>
 
             {error && <p className='text-red-500 mb-4'>{error}</p>}
@@ -175,7 +254,7 @@ export default function NewPostForm({ onClose }: NewPostFormProps) {
                 </button>
                 <button
                     type='submit'
-                    disabled={submitting || !content.trim()}
+                    disabled={submitting || (!content.trim() && uploadedFiles.length === 0)}
                     className='submit-button'
                 >
                     {submitting ? 'Posting...' : 'Post'}

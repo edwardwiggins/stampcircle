@@ -1,68 +1,81 @@
+// app/components/Login.tsx
+
 'use client';
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+// --- UPDATED --- Import the shared client instance directly
+import supabase from '@/app/lib/client-supabase';
+import '@/app/styles/auth-form.css';
 
 export default function Login() {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
-  const router = useRouter();
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    
+    const router = useRouter();
+    // --- REMOVED --- The line below is no longer needed as we import the client directly
+    // const supabase = createClientSupabaseClient();
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setError('');
+    const handleLogin = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setError(null);
+        setLoading(true);
 
-    const response = await fetch('/api/login', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ email, password }),
-    });
+        const { error } = await supabase.auth.signInWithPassword({
+            email,
+            password,
+        });
 
-    if (response.ok) {
-      // On a successful response from the API, redirect the user.
-      router.push('/');
-    } else {
-      const data = await response.json();
-      setError(data.error || 'Login failed.');
-    }
+        if (error) {
+            setError(error.message);
+        } else {
+            // Force a page reload to re-run the server-side auth check
+            // and redirect to the main feed.
+            router.refresh();
+        }
 
-    setLoading(false);
-  };
+        setLoading(false);
+    };
 
-  return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100">
-      <form onSubmit={handleLogin} className="p-8 bg-white rounded-lg shadow-md w-96">
-        <h2 className="text-2xl font-bold mb-6 text-center">Sign In</h2>
-        {error && <p className="text-red-500 mb-4">{error}</p>}
-        <input
-          type="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          placeholder="Email"
-          className="w-full p-3 mb-4 border rounded-md"
-          required
-        />
-        <input
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          placeholder="Password"
-          className="w-full p-3 mb-6 border rounded-md"
-          required
-        />
-        <button
-          type="submit"
-          className="w-full bg-blue-500 text-white font-bold py-3 px-4 rounded-md hover:bg-blue-600"
-          disabled={loading}
-        >
-          {loading ? 'Loading...' : 'Sign In'}
-        </button>
-      </form>
-    </div>
-  );
+    return (
+        <div className="auth-container">
+            <form onSubmit={handleLogin} className="auth-form">
+                <h1>Welcome Back</h1>
+
+                <div className="input-group">
+                    <label htmlFor="email">Email</label>
+                    <input 
+                        id="email" 
+                        type="email" 
+                        value={email} 
+                        onChange={(e) => setEmail(e.target.value)} 
+                        required 
+                    />
+                </div>
+                <div className="input-group">
+                    <label htmlFor="password">Password</label>
+                    <input 
+                        id="password" 
+                        type="password" 
+                        value={password} 
+                        onChange={(e) => setPassword(e.target.value)} 
+                        required 
+                    />
+                </div>
+
+                <button type="submit" className="submit-button" disabled={loading}>
+                    {loading ? 'Logging In...' : 'Log In'}
+                </button>
+
+                {error && <p className="error-message">{error}</p>}
+
+                <p className="auth-link">
+                    Don't have an account? <Link href="/signup">Sign Up</Link>
+                </p>
+            </form>
+        </div>
+    );
 }

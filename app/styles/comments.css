@@ -60,6 +60,7 @@
     background-color: rgba(255, 217, 0, 0.4);
     border: 1px solid gold;
     color: #333;
+    margin-bottom: 4px;
 }
 
 .status-badge.flagged {
@@ -162,7 +163,7 @@
 .comment-image {
   width: 100%;
   min-width: 150px;
-  height: 100%;
+  height: auto;
   min-height: 150px;
   aspect-ratio: 1/1;
   object-fit: cover;
@@ -171,7 +172,7 @@
 
 .comment-images.one img {
   width: 100%;
-  height: 100%;
+  height: auto;
   aspect-ratio: 1 / 1; /* square */
   object-fit: cover;
   border-radius: 8px;
@@ -185,7 +186,7 @@
 
 .comment-images.two img {
   width: 100%;
-  height: 100%;
+  height: auto;
   object-fit: cover;
   border-radius: 8px;
 }
@@ -200,7 +201,7 @@
 .comment-images.three img:nth-child(1) { /* large left image */
   grid-row: 1 / span 2;
   width: 100%;
-  height: 100%;
+  height: auto;
   object-fit: cover;
   border-radius: 8px;
 }
@@ -208,7 +209,7 @@
 .comment-images.three img:nth-child(2), 
 .comment-images.three img:nth-child(3) { /* top-right & bottom-right */
   width: 100%;
-  height: 100%;
+  height: auto;
   object-fit: cover;
   border-radius: 8px;
 }
@@ -222,7 +223,7 @@
 
 .comment-images.four img {
   width: 100%;
-  height: 100%;
+  height: auto;
   object-fit: cover;
   border-radius: 8px;
 }

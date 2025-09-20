@@ -3,7 +3,7 @@
 import PostCard from './postCard';
 import type { LocalPost, LocalUserProfile } from '@/app/lib/local-db';
 
-// **UPDATED**: The props interface now includes the onBlockUser handler.
+// **THE FIX**: Add onSavePost to the props interface
 interface FeedProps {
     posts: LocalPost[];
     userProfile: LocalUserProfile | null;
@@ -11,9 +11,10 @@ interface FeedProps {
     onUpdatePost: (postId: number, newContent: string) => void;
     onReportPost: (postId: number) => void;
     onBlockUser: (userId: string) => void;
+    onSavePost: (postId: number, isCurrentlySaved: boolean) => void;
 }
 
-export default function Feed({ posts, userProfile, onDeletePost, onUpdatePost, onReportPost, onBlockUser }: FeedProps) {
+export default function Feed({ posts, userProfile, onDeletePost, onUpdatePost, onReportPost, onBlockUser, onSavePost }: FeedProps) {
     const uniquePosts = Array.from(new Map(posts.map(post => [post.id, post])).values());
 
     if (!uniquePosts || uniquePosts.length === 0) {
@@ -35,6 +36,8 @@ export default function Feed({ posts, userProfile, onDeletePost, onUpdatePost, o
                     onUpdate={onUpdatePost}
                     onReport={onReportPost}
                     onBlockUser={onBlockUser}
+                    // **THE FIX**: Pass the onSavePost prop down
+                    onSavePost={onSavePost}
                 />
             ))}
         </div>
