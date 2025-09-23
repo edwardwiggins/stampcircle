@@ -5,7 +5,6 @@ import { useUser } from './context/user-context';
 import { createLocalPost, syncLocalPosts } from './lib/supabase-sync-utils';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from './lib/local-db';
-// --- UPDATED --- Import the shared client instance directly
 import supabase from './lib/client-supabase';
 import { SlArrowDown } from "react-icons/sl";
 import Image from 'next/image';
@@ -29,24 +28,25 @@ export default function NewPostForm({ onClose }: NewPostFormProps) {
     const [allowComments, setAllowComments] = useState(true);
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    // --- REMOVED --- The line below is no longer needed as we import the client directly
-    // const supabase = createClientSupabaseClient();
     
     const [uploadedFiles, setUploadedFiles] = useState<OutputFileEntry[]>([]);
     const [isMenuOpen, setIsMenuOpen] = useState(false);
     const menuRef = useRef<HTMLDivElement>(null);
+    // --- NEW --- State to track tags suggested in this session
+    const [sessionSuggestedTags, setSessionSuggestedTags] = useState<string[]>([]);
 
     useEffect(() => {
-        const fetchVisibilityOptions = async () => {
-            const { data, error } = await supabase.from('social_post_visibilityoptions').select('*').order('sort');
-            if (error) {
-                console.error('Failed to fetch visibility options:', error);
-            } else if (data) {
-                await db.social_post_visibilityoptions.bulkPut(data);
-            }
+        const fetchInitialData = async () => {
+            const { data: visData, error: visError } = await supabase.from('social_post_visibilityoptions').select('*').order('sort');
+            if (visError) console.error('Failed to fetch visibility options:', visError);
+            else if (visData) await db.social_post_visibilityoptions.bulkPut(visData);
+
+            const { data: tagsData, error: tagsError } = await supabase.from('social_tags').select('*').eq('tag_status', 1).eq('is_category', 0);
+            if (tagsError) console.error('Failed to fetch hashtags:', tagsError);
+            else if (tagsData) await db.social_tags.bulkPut(tagsData);
         };
-        fetchVisibilityOptions();
-    }, [supabase]);
+        fetchInitialData();
+    }, []);
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
@@ -78,24 +78,82 @@ export default function NewPostForm({ onClose }: NewPostFormProps) {
     const fetchUsers = async (query: string, callback: (data: { id: string; display: string }[]) => void) => {
         if (!query) return;
         const users = await db.userProfile
-            .where('displayName')
-            .startsWithIgnoreCase(query)
-            .or('username')
-            .startsWithIgnoreCase(query)
-            .limit(10)
-            .toArray();
-
-        const formattedUsers = users.map(user => ({
-            id: user.username,
-            display: user.displayName || user.username,
-        }));
-        callback(formattedUsers);
+            .where('displayName').startsWithIgnoreCase(query)
+            .or('username').startsWithIgnoreCase(query)
+            .limit(10).toArray();
+        callback(users.map(user => ({ id: user.username, display: user.displayName || user.username })));
     };
 
+    const fetchHashtags = async (query: string, callback: (data: { id: string | number; display: string }[]) => void) => {
+        if (!query) return;
+        const tags = await db.social_tags
+            .where('[tag_status+is_category]').equals([1, 0])
+            .and(tag => tag.tag_name.toLowerCase().startsWith(query.toLowerCase()))
+            .limit(5).toArray();
+
+        const formattedTags = tags.map(tag => ({ id: tag.id, display: tag.tag_displayname }));
+
+        const queryIsNewSuggestion = query.length > 2 && !tags.some(tag => tag.tag_name.toLowerCase() === query.toLowerCase());
+        if (queryIsNewSuggestion) {
+            formattedTags.push({
+                id: `SUGGEST_NEW:${query}`,
+                display: `Suggest #${query} as a new tag`
+            });
+        }
+        callback(formattedTags);
+    };
+    
+    const handleSuggestTag = (tagName: string) => {
+        console.log(`User suggested new tag: ${tagName}`);
+        // --- NEW --- Add the suggested tag to our session state
+        setSessionSuggestedTags(prev => [...prev, tagName.toLowerCase()]);
+        toast.success(`'#${tagName}' submitted for review. Thank you!`);
+    };
+
+    const validateHashtags = async (text: string): Promise<{ isValid: boolean; error?: string }> => {
+        const plainTextRegex = /(?<!\S)#(\w+)/g;
+        const bbCodeRegex = /#\[([^\]]+)\]\(([^)]+)\)/g;
+
+        const bbCodeTags = new Set([...text.matchAll(bbCodeRegex)].map(m => m[1]));
+        const plainTextTags = [...text.matchAll(plainTextRegex)].map(m => m[1]);
+
+        for (const plainTag of plainTextTags) {
+            if (bbCodeTags.has(`#${plainTag}`)) {
+                continue;
+            }
+
+            const cleanTagName = plainTag.toLowerCase();
+            
+            // --- UPDATED --- Check if the tag was just suggested in this session
+            if (sessionSuggestedTags.includes(cleanTagName)) {
+                continue;
+            }
+
+            const existingTag = await db.social_tags
+                .where('tag_name').equalsIgnoreCase(cleanTagName)
+                .first();
+
+            if (!existingTag) {
+                return {
+                    isValid: false,
+                    error: `The tag '#${plainTag}' is not an approved tag. To suggest it, please use the autocomplete menu.`
+                };
+            }
+        }
+        return { isValid: true };
+    };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setError(null);
+
+        const hashtagValidation = await validateHashtags(content);
+        if (!hashtagValidation.isValid) {
+            setError(hashtagValidation.error!);
+            toast.error(hashtagValidation.error!);
+            return;
+        }
+
         setSubmitting(true);
 
         try {
@@ -111,7 +169,8 @@ export default function NewPostForm({ onClose }: NewPostFormProps) {
                 allow_comments: allowComments,
                 has_images: uploadedFiles.length > 0,
                 image_count: uploadedFiles.length,
-                has_mentions: content.includes('@[') 
+                has_mentions: content.includes('@['),
+                has_hashtags: content.includes('#[')
             });
 
             await createLocalPost({
@@ -136,7 +195,7 @@ export default function NewPostForm({ onClose }: NewPostFormProps) {
     };
 
     return (
-        <form onSubmit={handleSubmit} className='flex flex-col'>
+        <form onSubmit={handleSubmit} className='flex flex-col h-full'>
             <div className="relative mb-4" ref={menuRef}>
                 <button 
                     type="button" 
@@ -187,10 +246,20 @@ export default function NewPostForm({ onClose }: NewPostFormProps) {
 
             <MentionsInput
                 value={content}
-                onChange={(e) => setContent(e.target.value)}
-                placeholder="What's on your mind? Mention users with @"
+                onChange={(e, newValue, newPlainTextValue, mentions) => {
+                    const lastMention = mentions[mentions.length - 1];
+                    if (lastMention && typeof lastMention.id === 'string' && lastMention.id.startsWith('SUGGEST_NEW:')) {
+                        const newTagName = lastMention.id.split(':')[1];
+                        handleSuggestTag(newTagName);
+                        const newContent = content.replace(`#[${lastMention.display}](${lastMention.id})`, `#${newTagName}`);
+                        setContent(newContent);
+                    } else {
+                        setContent(newValue);
+                    }
+                }}
+                placeholder="What's on your mind? Use @ to mention users and # to add tags."
                 className="mentions-input"
-                a11ySuggestionsListLabel={"Suggested users for mention"}
+                a11ySuggestionsListLabel={"Suggested users and hashtags"}
             >
                 <Mention
                     trigger="@"
@@ -198,6 +267,13 @@ export default function NewPostForm({ onClose }: NewPostFormProps) {
                     markup="@[__display__](__id__)"
                     displayTransform={(id, display) => `@${display}`}
                     className="mentions-mention"
+                />
+                <Mention
+                    trigger="#"
+                    data={fetchHashtags}
+                    markup="#[__display__](__id__)"
+                    displayTransform={(id, display) => display}
+                    className="mentions-hashtag"
                 />
             </MentionsInput>
 
@@ -218,7 +294,7 @@ export default function NewPostForm({ onClose }: NewPostFormProps) {
                 </div>
             )}
 
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center justify-between mt-auto pt-4">
                 <div className="uploader-regular-container">
                     <FileUploaderRegular
                         pubkey={process.env.NEXT_PUBLIC_UPLOADCARE_PUBLIC_KEY || ''}

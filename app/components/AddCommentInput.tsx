@@ -91,6 +91,29 @@ export default function AddCommentInput({ userProfile, onAddComment, parentId = 
         callback(formattedUsers);
     };
 
+    const mentionsInputStyle = {
+  // This styles the overall container
+  control: {
+    fontFamily: 'inherit',
+    fontSize: '0.9em',
+    lineHeight: 1.4,
+  },
+  
+  // This is the important part that styles the TEXTAREA
+  input: {
+    width: '100%',
+    minHeight: '40px',
+    maxHeight: '200px',
+    resize: 'none',
+    overflowY: 'auto',
+    border: '1px solid #ddd',
+    borderRadius: '8px',
+    padding: '0.7em',
+    backgroundColor: '#f5f6f7',
+    color: '#555',
+  },
+};
+
     return (
         <div className='add-comment-container'>
             <div className='add-comment'>
@@ -104,8 +127,9 @@ export default function AddCommentInput({ userProfile, onAddComment, parentId = 
                         onChange={(e) => setCommentContent(e.target.value)}
                         placeholder="Write a comment..."
                         className="mentions-input-comment"
+                        style={mentionsInputStyle} // <-- ADD THIS LINE
                         a11ySuggestionsListLabel={"Suggested users for mention"}
-                        singleLine={true}
+                        singleLine={false}
                     >
                         <Mention
                             trigger="@"

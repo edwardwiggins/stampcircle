@@ -189,7 +189,6 @@ footer {
 .username-container {
   display: flex;
   flex-direction: row;
-  font-weight: bold;
   color: #333;
 }
 
@@ -217,6 +216,11 @@ footer {
 
 .post-icon {
   color: #555;
+  margin-right: 0.5em;
+}
+
+.post-icon-disabled {
+  color: crimson;
   margin-right: 0.5em;
 }
 
@@ -267,6 +271,11 @@ footer {
 .footer-action:hover {
   background-color: #e7e7e7;
   border-radius: 5px;
+}
+
+.footer-action.disabled {
+  color: crimson;
+  cursor: not-allowed;
 }
 
 .footer-action i {
@@ -346,14 +355,13 @@ footer {
 }
 
 /* This targets the textarea element itself. */
-.comment-textarea MentionsInput {
+/*
+.comment-textarea {
     width: 100%;
-    /* The initial height is now controlled by the 'rows' attribute */
-    /* REMOVED: height, min-height, field-sizing */
-    max-height: 200px; /* We still want a limit */
+    max-height: 200px;
     resize: none;
     overflow-y: auto;
-    /* Your existing styling remains the same */
+
     border: 1px solid #ddd;
     border-radius: 8px;
     padding: 0.7em;
@@ -363,6 +371,7 @@ footer {
     background-color: #f5f6f7;
     color: #555;
 }
+    */
 
 .comment-heading {
   display: flex;             /* row: avatar left, info right */
@@ -484,7 +493,7 @@ footer {
     width: 100%;
     min-height: 80px;
     border: 1px solid #ccc;
-    border-radius: 6px;
+    border-radius: 8px;
     padding: 8px;
     font-family: inherit;
     font-size: 0.85em;
@@ -539,7 +548,7 @@ footer {
 .post-images {
   display: grid;
   gap: 2px;
-  margin-top: 0.5em;
+  margin-top: 1em;
   width: 100%;
   aspect-ratio: 1/1;
 }
@@ -567,7 +576,7 @@ footer {
 
 .post-images.three {
   display: grid;
-  grid-template-columns: 2fr 1fr;
+  grid-template-columns: 1fr 1fr;
   grid-template-rows: 1fr 1fr;
   height: 400px;
 }
@@ -633,11 +642,12 @@ footer {
   padding: 1.5em;
   border-radius: 10px;
   width: 90%;
-  max-width: 500px;
+  max-width: 600px;
   height: fit-content;
   box-shadow: 0 4px 8px rgba(0,0,0,0.2);
   display: flex;
   flex-direction: column;
+  flex: 1;
   gap: 1em;
   z-index: 1000;
 
@@ -784,8 +794,8 @@ footer {
 /* Mentions */
 
 .mention-link {
-  color: #3b82f6; /* A nice blue color */
-  font-weight: 600; /* Semi-bold */
+  color: #3b82f6;
+  font-weight: 600;
   text-decoration: none;
 }
 
@@ -1017,3 +1027,26 @@ footer {
 .reaction-icon:hover {
   transform: scale(1.2);
 }
+
+/* Shared Post Container */
+
+.embedded-post-container {
+  margin-top: 1rem;
+/*  border: 1px solid #e5e7eb;  gray-200 
+  border-radius: 0.5rem;  rounded-lg 
+  padding: 1rem; */
+}
+
+.relationship-badge-following,
+.relationship-badge-connected {
+  width: fit-content;
+  padding: 2px 4px;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 400;
+  background: #e7e7e7;
+  border: 1px solid #cecece;
+  color: #333;
+  vertical-align: middle;
+}
+

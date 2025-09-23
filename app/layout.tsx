@@ -1,11 +1,10 @@
+// app/layout.tsx
+
 import type { Metadata } from "next";
 import { Inter } from 'next/font/google';
 import "./globals.css";
-import SupabaseListener from './components/SupabaseListener';
-import { UserProvider } from './context/user-context';
-import OfflineBanner from "./components/OfflineBanner";
-// **NEW**: Import the Toaster component
-import { Toaster } from 'react-hot-toast';
+// --- UPDATED --- We only need to import the Providers component now
+import { Providers } from './providers';
 
 export const metadata: Metadata = {
  title: "StampCircle",
@@ -25,15 +24,12 @@ export default function RootLayout({
         <link rel="manifest" href="/manifest.json" />
         <meta name="theme-color" content="#000000" />
       </head>
-   <body className={inter.className}>
-    {/* **NEW**: The Toaster component is placed here to be available on all pages */}
-    <Toaster position="bottom-right" />
-    <SupabaseListener />
-    <UserProvider>
-     {children}
-     <OfflineBanner />
-    </UserProvider>
-   </body>
+      <body className={inter.className}>
+        {/* --- UPDATED --- The layout is now much cleaner --- */}
+        <Providers>
+        {children}
+        </Providers>
+      </body>
   </html>
  );
 }

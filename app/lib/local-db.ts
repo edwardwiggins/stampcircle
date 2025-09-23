@@ -21,6 +21,7 @@ export interface LocalPost {
     created_at: string;
     author_id: string;
     post_content: string;
+    related_post_id?: number | null;
     synced: 0 | 1;
     post_type: 'User' | 'Ad' | 'Suggestion' | 'Sponsored' | 'OTD';
     post_status: 'pending' | 'approved' | 'flagged' | 'rejected' | 'reported' | 'appealed';
@@ -34,6 +35,8 @@ export interface LocalPost {
     images?: OutputFileEntry[];
     newImages?: OutputFileEntry[];
     deletedImages?: number[];
+    tags?: LocalSocialTag[];
+    comments?: LocalComment[];
 }
 
 export interface LocalComment {
@@ -86,13 +89,14 @@ export interface LocalVisibilityOption {
 export interface LocalNotification {
     id: number;
     created_at: string;
-    sending_user_id: string;
+    last_sending_user_id: string;
     receiving_user_id: string;
-    notification_type: 'mention' | 'new_comment' | 'reply' | 'reaction';
+    notification_type: 'mention' | 'new_comment' | 'reply' | 'reaction' | 'share';
     entity_type: 'post' | 'comment';
     data: {
         entity_id: number;
         post_id: number;
+        senders?: string[];
     };
     is_read: 0 | 1;
 }
@@ -123,6 +127,37 @@ export interface LocalCommentReaction {
     is_deleted?: boolean;
 }
 
+export interface LocalSocialTag {
+    id: number;
+    tag_name: string;
+    tag_displayname: string;
+    tag_status: number;
+    is_category: number;
+}
+
+export interface LocalPostTag {
+    id: number;
+    post_id: number;
+    tag_id: number;
+}
+
+// --- NEW INTERFACES FOR CONNECTIONS AND FOLLOWS ---
+export interface LocalUserConnection {
+    id: number;
+    user_id: string;
+    target_user_id: string;
+    status: 'pending' | 'active' | 'blocked';
+    created_at: string;
+    updated_at: string;
+}
+
+export interface LocalUserFollow {
+    id: number;
+    follower_id: string;
+    following_id: string;
+    created_at: string;
+}
+
 
 export class SocialDatabase extends Dexie {
     social_posts!: Table<LocalPost>;
@@ -136,12 +171,17 @@ export class SocialDatabase extends Dexie {
     social_reactions!: Table<LocalReactionType>;
     social_posts_reactions!: Table<LocalPostReaction>;
     social_comments_reactions!: Table<LocalCommentReaction>;
+    social_tags!: Table<LocalSocialTag>;
+    social_post_tags!: Table<LocalPostTag>;
+    // --- NEW TABLE DEFINITIONS ---
+    social_user_connections!: Table<LocalUserConnection>;
+    social_user_follows!: Table<LocalUserFollow>;
     
     constructor() {
         super('SocialDatabase');
-        // --- UPDATED --- Version is now 22 and new indexes are added to reactions tables.
-        this.version(22).stores({
-            social_posts: '++id, author_id, created_at, synced, is_deleted',
+        // --- UPDATED --- Incremented version number to 29 to apply schema changes
+        this.version(29).stores({
+            social_posts: '++id, author_id, created_at, synced, is_deleted, related_post_id',
             userProfile: 'user_id, &username, displayName',
             social_post_comments: '++id, post_id, author_id, parent_comment_id, synced, is_deleted',
             social_post_visibilityoptions: 'id, sort',
@@ -150,9 +190,13 @@ export class SocialDatabase extends Dexie {
             social_post_images: '++id, post_id, user_id',
             social_user_notifications: '++id, receiving_user_id, is_read, created_at, [receiving_user_id+is_read]',
             social_reactions: 'id',
-            // --- UPDATED --- Add compound index for finding unsynced reactions by user
             social_posts_reactions: '++id, &[user_id+post_id], post_id, synced, is_deleted, [synced+user_id]',
             social_comments_reactions: '++id, &[user_id+comment_id], comment_id, synced, is_deleted, [synced+user_id]',
+            social_tags: '++id, tag_name, tag_displayname, [tag_status+is_category]',
+            social_post_tags: '++id, &[post_id+tag_id], post_id',
+            // --- NEW SCHEMA DEFINITIONS FOR DEXIE ---
+            social_user_connections: '++id, &[user_id+target_user_id], status',
+            social_user_follows: '++id, &[follower_id+following_id], follower_id, following_id',
         });
     }
 }

@@ -114,6 +114,8 @@ export default function Reactions({ entityId, entityType, userProfile, displaySt
                             width={32}
                             height={32}
                             className="reaction-icon"
+                            data-tooltip-id="app-tooltip"
+                            data-tooltip-content={reaction.reaction}
                             onClick={() => handleReactionSelect(reaction)}
                         />
                     ))}

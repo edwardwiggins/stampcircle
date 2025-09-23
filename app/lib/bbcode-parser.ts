@@ -8,9 +8,11 @@ export function parseBBCode(text: string): string {
 
   let html = text;
 
-  // --- NEW --- Convert @[DisplayName](user_id) mentions into clickable links
-  // This rule should run first to avoid conflicts with other tags like [b]
+  // Convert @[DisplayName](user_id) mentions into clickable links
   html = html.replace(/@\[(.*?)\]\((.*?)\)/g, '<a href="/profile/$2" class="mention-link">@$1</a>');
+
+  // --- NEW --- Remove #[DisplayName](tag_id) hashtags from the text so they don't display raw
+  html = html.replace(/#\[[^\]]+\]\([^)]+\)/g, '<a href="/hashtags/$2" class="mention-link">@$1</a>');
 
   html = html.replace(/\[ml\](.*?)\[\/ml\]/gi, "$1");
   html = html.replace(/\[b\](.*?)\[\/b\]/gi, "<strong>$1</strong>");

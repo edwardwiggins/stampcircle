@@ -147,6 +147,11 @@
   color: #333;
 }
 
+.image-preview-contain {
+  display: flex;
+  flex-direction: row;
+}
+
 .comment-image-gallery {
   margin-top: 8px;
   display: flex;
@@ -162,9 +167,7 @@
 
 .comment-image {
   width: 100%;
-  min-width: 150px;
   height: auto;
-  min-height: 150px;
   aspect-ratio: 1/1;
   object-fit: cover;
   cursor: pointer;

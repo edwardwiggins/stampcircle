@@ -1,13 +1,210 @@
-// lib/supabase-sync-utils.ts (Complete File)
+// lib/supabase-sync-utils.ts
 
 import { db } from './local-db';
-import { LocalPost, LocalComment } from './local-db';
+import { LocalPost, LocalComment, LocalPostImage, LocalCommentImage, LocalUserProfile, LocalNotification, LocalSocialTag, LocalUserConnection } from './local-db';
 import type { OutputFileEntry } from '@uploadcare/react-uploader';
 import supabase from '@/app/lib/client-supabase';
 
 let isSyncingPosts = false;
 let isSyncingComments = false;
 let isSyncingReactions = false;
+
+// --- UPDATED FUNCTION TO SYNC CONNECTIONS AND FOLLOWS ---
+export async function syncUserSocialGraph(userId: string) {
+    if (!supabase || !userId) return;
+
+    try {
+        const [connectionsResult, followsResult] = await Promise.all([
+            supabase
+                .from('social_user_connections')
+                .select('*')
+                .or(`user_id.eq.${userId},target_user_id.eq.${userId}`)
+                .eq('status', 'active'),
+            supabase
+                .from('social_user_follows')
+                .select('*')
+                .eq('follower_id', userId)
+        ]);
+
+        if (connectionsResult.error) throw connectionsResult.error;
+        if (followsResult.error) throw followsResult.error;
+        
+        // --- NEW DE-DUPLICATION LOGIC ---
+        const rawConnections = connectionsResult.data || [];
+        const uniqueConnectionKeys = new Set<string>();
+        const uniqueConnections: LocalUserConnection[] = [];
+
+        for (const conn of rawConnections) {
+            // Create a consistent key for each connection pair (e.g., "id1-id2") by sorting the IDs
+            const key = [conn.user_id, conn.target_user_id].sort().join('-');
+            if (!uniqueConnectionKeys.has(key)) {
+                uniqueConnectionKeys.add(key);
+                uniqueConnections.push(conn);
+            }
+        }
+        // --- END OF DE-DUPLICATION LOGIC ---
+
+        const follows = followsResult.data || [];
+
+        await db.transaction('rw', db.social_user_connections, db.social_user_follows, async () => {
+            await db.social_user_connections.clear();
+            await db.social_user_follows.clear();
+            // Put the de-duplicated list into the database
+            await db.social_user_connections.bulkPut(uniqueConnections);
+            await db.social_user_follows.bulkPut(follows);
+        });
+
+    } catch (error) {
+        console.error("Error syncing user's social graph:", error);
+    }
+}
+
+
+// --- PAGINATED FEED FETCHING LOGIC ---
+export async function fetchPaginatedFeed(userId: string, page: number, pageSize: number = 10) {
+    if (!supabase || !userId) return { posts: [], hasMore: false };
+
+    try {
+        const from = page * pageSize;
+        const to = from + pageSize - 1;
+
+        const { data: remotePosts, error: postsError } = await supabase
+            .rpc('get_feed_for_user')
+            .order('created_at', { ascending: false })
+            .range(from, to);
+
+        if (postsError) throw postsError;
+        if (!remotePosts || remotePosts.length === 0) return { posts: [], hasMore: false };
+
+        const hasMore = remotePosts.length === pageSize;
+        const postIds = remotePosts.map((p: LocalPost) => p.id);
+
+        const [
+            postTagsResult,
+            postImagesResult,
+            commentsResult,
+            savedPostsResult,
+            postReactionsResult
+        ] = await Promise.all([
+            supabase.from('social_post_tags').select('*, social_tags(*)').in('post_id', postIds),
+            supabase.from('social_post_images').select('*').in('post_id', postIds),
+            supabase.from('social_post_comments').select('*, social_comment_images(*)').in('post_id', postIds).order('created_at', { ascending: true }),
+            supabase.from('social_saved_posts').select('*').eq('user_id', userId).in('post_id', postIds),
+            supabase.from('social_posts_reactions').select('*').in('post_id', postIds)
+        ]);
+
+        if (postTagsResult.error) throw postTagsResult.error;
+        if (postImagesResult.error) throw postImagesResult.error;
+        if (commentsResult.error) throw commentsResult.error;
+        if (savedPostsResult.error) throw savedPostsResult.error;
+        if (postReactionsResult.error) throw postReactionsResult.error;
+
+        const remotePostTags = postTagsResult.data || [];
+        const remotePostImages = postImagesResult.data || [];
+        const remoteComments = commentsResult.data || [];
+        const remoteSavedPosts = savedPostsResult.data || [];
+        const remotePostReactions = postReactionsResult.data || [];
+
+        const commentIds = remoteComments.map((c: LocalComment) => c.id);
+        const { data: remoteCommentReactions, error: commentReactionsError } = await supabase.from('social_comments_reactions').select('*').in('comment_id', commentIds);
+        if (commentReactionsError) throw commentReactionsError;
+
+        const authorIds = new Set<string>();
+        remotePosts.forEach((p: LocalPost) => authorIds.add(p.author_id));
+        remoteComments.forEach((c: LocalComment) => authorIds.add(c.author_id));
+
+        const { data: profiles, error: profileError } = await supabase.from('user_profile').select('*').in('user_id', Array.from(authorIds));
+        if (profileError) throw profileError;
+
+        const tagsByPostId = new Map<number, LocalSocialTag[]>();
+        remotePostTags.forEach((pt: any) => {
+            if (!tagsByPostId.has(pt.post_id)) tagsByPostId.set(pt.post_id, []);
+            if (pt.social_tags) tagsByPostId.get(pt.post_id)!.push(pt.social_tags);
+        });
+
+        const postsWithData = remotePosts.map((post: LocalPost) => ({
+            ...post,
+            synced: 1,
+            tags: tagsByPostId.get(post.id) || [],
+        }));
+        
+        await db.transaction('rw', db.tables, async () => {
+            if (postsWithData.length > 0) await db.social_posts.bulkPut(postsWithData);
+            if (remotePostImages.length > 0) await db.social_post_images.bulkPut(remotePostImages);
+            if (profiles && profiles.length > 0) await db.userProfile.bulkPut(profiles);
+            if (remoteSavedPosts.length > 0) await db.social_saved_posts.bulkPut(remoteSavedPosts);
+            if (remotePostReactions.length > 0) await db.social_posts_reactions.bulkPut(remotePostReactions);
+            if (remoteCommentReactions && remoteCommentReactions.length > 0) await db.social_comments_reactions.bulkPut(remoteCommentReactions);
+            if (remotePostTags.length > 0) await db.social_post_tags.bulkPut(remotePostTags.map((pt: any) => ({ id: pt.id, post_id: pt.post_id, tag_id: pt.tag_id })));
+            
+            if (remoteComments.length > 0) {
+                const commentsToStore: LocalComment[] = [];
+                const imagesToStore: LocalCommentImage[] = [];
+                remoteComments.forEach((comment: any) => {
+                    const { social_comment_images, ...commentData } = comment;
+                    commentsToStore.push({ ...commentData, created_at: new Date(commentData.created_at), synced: 1 });
+                    if (social_comment_images) imagesToStore.push(...social_comment_images);
+                });
+                await db.social_post_comments.bulkPut(commentsToStore);
+                await db.social_comment_images.bulkPut(imagesToStore);
+            }
+        });
+
+        return { posts: postsWithData, hasMore };
+
+    } catch (err) {
+        console.error('Error fetching paginated feed:', err);
+        return { posts: [], hasMore: false };
+    }
+}
+
+
+// --- EXISTING SYNC LOGIC ---
+// (The rest of the file is unchanged)
+
+const extractMentions = (content: string, pattern: RegExp): { display: string, id: string }[] => {
+    const matches = [...content.matchAll(pattern)];
+    return matches.map(match => ({ display: match[1], id: match[2] }));
+};
+
+const processPostTags = async (post: LocalPost) => {
+    if (!post.post_content) return;
+
+    const hashtagPattern = /#\[([^\]]+)\]\(([^)]+)\)/g;
+    const allHashtags = extractMentions(post.post_content, hashtagPattern);
+
+    const existingTagIds = new Set<number>();
+    const suggestedTagNames = new Set<string>();
+
+    for (const tag of allHashtags) {
+        if (typeof tag.id === 'string' && tag.id.startsWith('SUGGEST_NEW:')) {
+            suggestedTagNames.add(tag.id.split(':')[1]);
+        } else if (!isNaN(Number(tag.id))) {
+            existingTagIds.add(Number(tag.id));
+        }
+    }
+
+    if (suggestedTagNames.size > 0) {
+        const suggestionsToInsert = [...suggestedTagNames].map(tagName => ({
+            tag_name: tagName,
+            suggested_by_user_id: post.author_id,
+            status: 'pending'
+        }));
+        const { error } = await supabase.from('social_suggested_tags').insert(suggestionsToInsert);
+        if (error) console.error("Error saving suggested tags:", error);
+    }
+    
+    await supabase.from('social_post_tags').delete().eq('post_id', post.id);
+
+    if (existingTagIds.size > 0) {
+        const tagsToInsert = [...existingTagIds].map(tagId => ({
+            post_id: post.id,
+            tag_id: tagId
+        }));
+        const { error } = await supabase.from('social_post_tags').insert(tagsToInsert);
+        if (error) console.error("Error saving post tags:", error);
+    }
+};
 
 export async function createLocalPost(newPostData: Partial<LocalPost>, uploadedFiles: OutputFileEntry[] = []) {
     try {
@@ -17,6 +214,7 @@ export async function createLocalPost(newPostData: Partial<LocalPost>, uploadedF
             created_at: new Date().toISOString(),
             author_id: newPostData.author_id!,
             post_content: newPostData.post_content!,
+            related_post_id: newPostData.related_post_id,
             synced: 0,
             post_type: 'User',
             post_status: 'pending',
@@ -36,17 +234,12 @@ export async function createLocalPost(newPostData: Partial<LocalPost>, uploadedF
 }
 
 export async function syncLocalPosts() {
-    if (isSyncingPosts) return;
-    if (!navigator.onLine) return;
+    if (isSyncingPosts || !navigator.onLine) return;
+    isSyncingPosts = true;
 
     try {
-        isSyncingPosts = true;
-        
         const unsyncedPosts = await db.social_posts.where({ synced: 0 }).toArray();
-        if (unsyncedPosts.length === 0) {
-            isSyncingPosts = false;
-            return;
-        }
+        if (unsyncedPosts.length === 0) return;
 
         for (const post of unsyncedPosts) {
             try {
@@ -57,11 +250,22 @@ export async function syncLocalPosts() {
                     continue; 
                 }
 
-                const { isFlagged, embedding, moderationData } = await fetch('/api/moderate', { 
-                    method: 'POST', 
-                    headers: { 'Content-Type': 'application/json' }, 
-                    body: JSON.stringify({ content: post.post_content, type: 'post' }) 
-                }).then(res => res.json());
+                let isFlagged = false;
+                let embedding = null;
+                let moderationData = null;
+                const needsModeration = !post.related_post_id || (post.post_content && post.post_content.trim() !== '');
+
+                if (needsModeration) {
+                    const moderationResult = await fetch('/api/moderate', { 
+                        method: 'POST', 
+                        headers: { 'Content-Type': 'application/json' }, 
+                        body: JSON.stringify({ content: post.post_content, type: 'post' }) 
+                    }).then(res => res.json());
+
+                    isFlagged = moderationResult.isFlagged;
+                    embedding = moderationResult.embedding;
+                    moderationData = moderationResult.moderationData;
+                }
 
                 const newStatus = isFlagged ? 'flagged' : 'approved';
                 
@@ -70,6 +274,7 @@ export async function syncLocalPosts() {
                     const postToInsert = {
                         author_id: post.author_id,
                         post_content: post.post_content,
+                        related_post_id: post.related_post_id,
                         created_at: post.created_at,
                         post_type: 'User' as const,
                         post_status: newStatus,
@@ -83,18 +288,17 @@ export async function syncLocalPosts() {
                     if (postError) throw postError;
 
                     if (newPostData) {
+                        await processPostTags({ ...post, id: newPostData.id });
+                        
                         if (post.images && post.images.length > 0) {
                             const imagesToInsert = post.images.map(file => ({
                                 post_id: newPostData.id,
                                 user_id: newPostData.author_id,
                                 image_url: file.cdnUrl,
                             }));
-                            
                             const { data: newImageData, error: imageError } = await supabase.from('social_post_images').insert(imagesToInsert).select();
                             if (imageError) throw imageError;
-                            if (newImageData) {
-                                await db.social_post_images.bulkPut(newImageData);
-                            }
+                            if (newImageData) await db.social_post_images.bulkPut(newImageData);
                         }
 
                         await db.social_posts.delete(tempId);
@@ -108,6 +312,7 @@ export async function syncLocalPosts() {
                         console.error(`RLS PRE-CHECK FAILED: Current user (${user?.id}) is not the author (${post.author_id}) of post ${post.id}. Skipping sync.`);
                         continue;
                     }
+                    await processPostTags(post);
 
                     if (post.deletedImages && post.deletedImages.length > 0) {
                         const { error: deleteError } = await supabase.from('social_post_images').delete().in('id', post.deletedImages);
@@ -123,9 +328,7 @@ export async function syncLocalPosts() {
                         }));
                         const { data: newImageData, error: imageError } = await supabase.from('social_post_images').insert(imagesToInsert).select();
                         if (imageError) throw imageError;
-                        if (newImageData) {
-                            await db.social_post_images.bulkPut(newImageData);
-                        }
+                        if (newImageData) await db.social_post_images.bulkPut(newImageData);
                     }
                     
                     const postToUpdate = {
@@ -159,18 +362,13 @@ export async function syncLocalPosts() {
 }
 
 export async function syncLocalComments() {
-    if (isSyncingComments) return;
-    if (!navigator.onLine) return;
- 
+    if (isSyncingComments || !navigator.onLine) return;
+    isSyncingComments = true;
+
     try {
-        isSyncingComments = true;
-        
         const unsyncedComments = await db.social_post_comments.where({ synced: 0 }).toArray();
-        if (unsyncedComments.length === 0) {
-            isSyncingComments = false;
-            return;
-        }
- 
+        if (unsyncedComments.length === 0) return;
+
         for (const comment of unsyncedComments) {
             try {
                 if (comment.is_deleted) {
@@ -183,7 +381,7 @@ export async function syncLocalComments() {
                         headers: { 'Content-Type': 'application/json' }, 
                         body: JSON.stringify({ content: comment.comment_content, type: 'comment' }) 
                     }).then(res => res.json());
- 
+
                     const newStatus = isFlagged ? 'flagged' : 'approved';
                     
                     const { data: newCommentData, error: commentError } = await supabase.from('social_post_comments')
@@ -196,9 +394,9 @@ export async function syncLocalComments() {
                             status: newStatus, 
                             moderation_data: moderationData 
                         }).select().single();
- 
+
                     if (commentError) throw commentError;
- 
+
                     if (newCommentData) {
                         if (comment.images && comment.images.length > 0) {
                             const imagesToInsert = comment.images.map(file => ({
@@ -206,15 +404,10 @@ export async function syncLocalComments() {
                                 user_id: newCommentData.author_id,
                                 image_url: file.cdnUrl
                             }));
-     
                             const { data: newImageData, error: imageError } = await supabase.from('social_comment_images').insert(imagesToInsert).select();
                             if (imageError) throw imageError;
-                            
-                            if (newImageData) {
-                                await db.social_comment_images.bulkPut(newImageData);
-                            }
+                            if (newImageData) await db.social_comment_images.bulkPut(newImageData);
                         }
-     
                         await db.social_post_comments.delete(tempId);
                         const { images, ...restOfComment } = comment;
                         await db.social_post_comments.put({ ...restOfComment, ...newCommentData, created_at: new Date(newCommentData.created_at), synced: 1 });
@@ -225,13 +418,11 @@ export async function syncLocalComments() {
                         console.error(`RLS PRE-CHECK FAILED: Current user (${user?.id}) is not the author (${comment.author_id}) of comment ${comment.id}. Skipping sync.`);
                         continue;
                     }
- 
                     if (comment.deletedImages && comment.deletedImages.length > 0) {
                         const { error: deleteError } = await supabase.from('social_comment_images').delete().in('id', comment.deletedImages);
                         if (deleteError) throw deleteError;
                         await db.social_comment_images.bulkDelete(comment.deletedImages);
                     }
- 
                     if (comment.newImages && comment.newImages.length > 0) {
                         const imagesToInsert = comment.newImages.map(file => ({
                             comment_id: comment.id,
@@ -240,11 +431,9 @@ export async function syncLocalComments() {
                         }));
                         const { data: newImageData, error: imageError } = await supabase.from('social_comment_images').insert(imagesToInsert).select();
                         if (imageError) throw imageError;
-                        if (newImageData) {
-                           await db.social_comment_images.bulkPut(newImageData);
-                        }
+                        if (newImageData) await db.social_comment_images.bulkPut(newImageData);
                     }
- 
+
                     const { isFlagged, moderationData } = await fetch('/api/moderate', { 
                         method: 'POST', 
                         headers: { 'Content-Type': 'application/json' }, 
@@ -286,16 +475,13 @@ export async function syncLocalComments() {
 }
 
 export async function syncLocalReactions() {
-    if (isSyncingReactions) return;
-    if (!navigator.onLine) return;
+    if (isSyncingReactions || !navigator.onLine) return;
+    isSyncingReactions = true;
 
     try {
-        isSyncingReactions = true;
-
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return;
 
-        // Sync Post Reactions
         const unsyncedPostReactions = await db.social_posts_reactions.where({ synced: 0, user_id: user.id }).toArray();
         for (const reaction of unsyncedPostReactions) {
             try {
@@ -319,7 +505,6 @@ export async function syncLocalReactions() {
             }
         }
 
-        // Sync Comment Reactions
         const unsyncedCommentReactions = await db.social_comments_reactions.where({ synced: 0, user_id: user.id }).toArray();
         for (const reaction of unsyncedCommentReactions) {
             try {

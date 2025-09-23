@@ -10,7 +10,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { useUser } from '@/app/context/user-context';
 import '@/app/styles/comments.css';
 import AddCommentInput from './AddCommentInput';
-import { SlOptions, SlPencil, SlTrash, SlShield, SlCup, SlBadge } from "react-icons/sl";
+import { SlOptions, SlPencil, SlTrash, SlShield, SlCup, SlBadge, SlBan } from "react-icons/sl";
 import { syncLocalComments } from '@/app/lib/supabase-sync-utils';
 import type { OutputFileEntry, OutputCollectionState } from '@uploadcare/react-uploader';
 import { FileUploaderRegular } from '@uploadcare/react-uploader';
@@ -21,9 +21,15 @@ import { parseBBCode } from '@/app/lib/bbcode-parser';
 import Dexie from 'dexie';
 import Reactions from './Reactions';
 
+// --- UPDATED --- Props now take the entire post object
+interface CommentsSectionProps {
+    post: LocalPost;
+}
+
 interface CommentProps { 
     comment: LocalComment; 
     postAuthorId?: string;
+    allowComments: boolean;
     onReply: (parentId: number) => void; 
     allComments: LocalComment[]; 
     activeReplyParentId: number | null; 
@@ -81,6 +87,7 @@ const CommentImages = ({ images }: { images: LocalCommentImage[] }) => {
 const Comment = ({ 
     comment, 
     postAuthorId,
+    allowComments,
     onReply, 
     allComments, 
     activeReplyParentId, 
@@ -194,7 +201,7 @@ const Comment = ({
                                     {newlyUploadedFiles.map((file, index) => (
                                          <div key={file.uuid || index} className="thumbnail">
                                             {file.cdnUrl && <Image src={`${file.cdnUrl}-/preview/100x100/`} alt="New image" width={60} height={60} className="thumbnail-image" />}
-                                         </div>
+                                        </div>
                                     ))}
                                 </div>
 
@@ -236,7 +243,7 @@ const Comment = ({
                                 userProfile={userProfile} 
                                 displayStyle="text" 
                             />
-                            <div className="comment-response" onClick={() => onReply(comment.id)}>Reply</div>
+                            {allowComments && <div className="comment-response" onClick={() => onReply(comment.id)}>Reply</div>}
                         </div>
                     </>
                 )}
@@ -258,6 +265,7 @@ const Comment = ({
                             key={reply.id} 
                             comment={reply} 
                             postAuthorId={postAuthorId}
+                            allowComments={allowComments}
                             onReply={onReply} 
                             allComments={allComments} 
                             activeReplyParentId={activeReplyParentId} 
@@ -276,83 +284,28 @@ const Comment = ({
     );
 };
 
-export default function CommentsSection({ postId }: { postId: number }) {
+export default function CommentsSection({ post }: CommentsSectionProps) {
     const { userProfile, loading: userLoading, supabase, isDbReady } = useUser();
     const [activeReplyParentId, setActiveReplyParentId] = useState<number | null>(null);
     const [visibleComments, setVisibleComments] = useState(3);
     const [expandedReplies, setExpandedReplies] = useState<Set<number>>(new Set());
-    const [queuedComments, setQueuedComments] = useState<LocalComment[]>([]);
-    const [queuedDeletions, setQueuedDeletions] = useState<LocalComment[]>([]);
 
-    const post: LocalPost | undefined = useLiveQuery(() => db.social_posts.get(postId),[postId]);
+    // --- UPDATED --- Use the pre-fetched comments from the post object
+    const allComments = post.comments || [];
+    const allowComments = post.allow_comments ?? true;
+    const postAuthorName = useLiveQuery(() => db.userProfile.get(post.author_id).then(p => p?.displayName || 'The author'), [post.author_id]) || 'The author';
     
-    useEffect(() => {
-        if (!supabase || !userProfile) return;
-        const channel = supabase.channel(`comments-for-post-${postId}`)
-            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'social_post_comments', filter: `post_id=eq.${postId}`}, 
-            async (payload) => {
-                const newComment = payload.new as LocalComment;
-                if (newComment.author_id === userProfile.user_id) return;
-                setQueuedComments(prev => [...prev, newComment]);
-                const senderProfile = await db.userProfile.get(newComment.author_id);
-                if (!senderProfile) {
-                    const { data } = await supabase.from('user_profile').select('*').eq('user_id', newComment.author_id).single();
-                    if (data) await db.userProfile.put(data);
-                }
-            })
-            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'social_post_comments', filter: `post_id=eq.${postId}`},
-            (payload) => {
-                const updatedComment = payload.new as LocalComment;
-                if (updatedComment.is_deleted) {
-                    setQueuedDeletions(prev => [...prev, updatedComment]);
-                } else {
-                    db.social_post_comments.put(updatedComment);
-                }
-            })
-            .subscribe();
-        return () => { supabase.removeChannel(channel); };
-    }, [supabase, userProfile, postId]);
-
-    useEffect(() => {
-        let timer: NodeJS.Timeout | undefined;
-        if (queuedComments.length > 0 || queuedDeletions.length > 0) {
-            timer = setTimeout(async () => {
-                const commentsToAdd = queuedComments.length;
-                const commentsToRemove = queuedDeletions.length;
-                const netChange = commentsToAdd - commentsToRemove;
-                if (netChange !== 0) {
-                    await db.social_posts.where({ id: postId }).modify(post => {
-                        post.totalcomments = (post.totalcomments || 0) + netChange;
-                    });
-                }
-                if (commentsToAdd > 0) {
-                    await db.social_post_comments.bulkPut(queuedComments);
-                    setQueuedComments([]);
-                }
-                if (commentsToRemove > 0) {
-                    await db.social_post_comments.bulkPut(queuedDeletions);
-                    setQueuedDeletions([]);
-                }
-            }, 180000);
-        }
-        return () => { if (timer) clearTimeout(timer); };
-    }, [queuedComments, queuedDeletions, postId]);
-
-    if (userLoading || !isDbReady) return <div className='comment-block'>Loading comments...</div>;
-
-    const allComments: LocalComment[] | undefined = useLiveQuery(() => db.social_post_comments.where('post_id').equals(postId).and(c => c.status === 'approved' || c.author_id === userProfile?.user_id).toArray(), [postId, userProfile?.user_id]);
-
     const handleDeleteComment = async (commentId: number) => {
-        trackEvent('comment_deleted', { post_id: postId, comment_id: commentId });
-        await db.social_posts.where({ id: postId }).modify(post => {
-            if (post.totalcomments > 0) post.totalcomments--;
+        trackEvent('comment_deleted', { post_id: post.id, comment_id: commentId });
+        await db.social_posts.where({ id: post.id }).modify(p => {
+            if (p.totalcomments > 0) p.totalcomments--;
         });
         await db.social_post_comments.update(commentId, { is_deleted: true, synced: 0 });
         syncLocalComments();
         toast.success('Comment deleted successfully.');
     };
     const handleUpdateComment = async (commentId: number, newContent: string, newFiles: OutputFileEntry[], deletedImageIds: number[]) => {
-        trackEvent('comment_updated', { post_id: postId, comment_id: commentId, new_images_count: newFiles.length, deleted_images_count: deletedImageIds.length });
+        trackEvent('comment_updated', { post_id: post.id, comment_id: commentId, new_images_count: newFiles.length, deleted_images_count: deletedImageIds.length });
         await db.social_post_comments.update(commentId, { comment_content: newContent, status: 'pending', synced: 0, newImages: newFiles, deletedImages: deletedImageIds });
         syncLocalComments();
         toast.success('Comment updated successfully.');
@@ -360,7 +313,7 @@ export default function CommentsSection({ postId }: { postId: number }) {
     
     const handleReportComment = async (commentId: number) => {
         if (!supabase) return;
-        trackEvent('comment_reported', { post_id: postId, comment_id: commentId });
+        trackEvent('comment_reported', { post_id: post.id, comment_id: commentId });
         await db.social_post_comments.update(commentId, { status: 'reported' });
         const { error } = await supabase.rpc('report_comment', { comment_id_to_report: commentId });
         toast.success('Comment reported successfully.');
@@ -369,14 +322,14 @@ export default function CommentsSection({ postId }: { postId: number }) {
     const handleAddComment = async (commentContent: string, parentId: number | null = null, files: OutputFileEntry[] = []) => {
         if (!userProfile || (!commentContent.trim() && files.length === 0)) return;
         try {
-            trackEvent('comment_created', { post_id: postId, has_images: files.length > 0, is_reply: parentId !== null });
-            await db.social_posts.where({ id: postId }).modify(post => { post.totalcomments++; });
+            trackEvent('comment_created', { post_id: post.id, has_images: files.length > 0, is_reply: parentId !== null });
+            await db.social_posts.where({ id: post.id }).modify(p => { p.totalcomments++; });
             toast.success('Comment submitted successfully.');
             const tempId = -Date.now();
             let parentComment = parentId ? await db.social_post_comments.get(parentId) : undefined;
             const depth = parentComment ? parentComment.depth + 1 : 0;
             const imagesToStore = files.map(file => ({ uuid: file.uuid, cdnUrl: file.cdnUrl })) as any[];
-            const newComment: LocalComment = { id: tempId, post_id: postId, author_id: userProfile.user_id, comment_content: commentContent, depth, parent_comment_id: parentId, path: [], synced: 0, created_at: new Date(), status: 'pending', is_deleted: false, images: imagesToStore };
+            const newComment: LocalComment = { id: tempId, post_id: post.id, author_id: userProfile.user_id, comment_content: commentContent, depth, parent_comment_id: parentId, path: [], synced: 0, created_at: new Date(), status: 'pending', is_deleted: false, images: imagesToStore };
             await db.social_post_comments.add(newComment);
             if (parentId) {
                 setActiveReplyParentId(null);
@@ -398,17 +351,21 @@ export default function CommentsSection({ postId }: { postId: number }) {
     const handleReplyClick = (parentId: number) => setActiveReplyParentId(activeReplyParentId === parentId ? null : parentId);
     const handleLoadMoreComments = () => setVisibleComments(prevCount => prevCount + 3);
 
+    const showHeading = rootComments.length > 0;
+
     return (
         <div className='comment-block'>
-            <div className="flex justify-between items-center mt-[10px] align-middle">
-                <div className="comments">Comments</div>
-            </div>
-            {rootComments.length === 0 ? (
-                <p className="text-center mt-[12px]">No comments yet. Be the first to comment...</p>
-            ) : (
+            
+            {showHeading && (
+                <div className="flex justify-between items-center mt-[10px] align-middle">
+                    <div className="comments">Comments</div>
+                </div>
+            )}
+            
+            {rootComments.length > 0 ? (
                 <div>
                     {displayedRootComments.map(comment => ( 
-                        <Comment key={comment.id} comment={comment} postAuthorId={post?.author_id} onReply={handleReplyClick} allComments={allComments} activeReplyParentId={activeReplyParentId} userProfile={userProfile} onAddComment={handleAddComment} expandedReplies={expandedReplies} onToggleReplies={handleToggleReplies} onDelete={handleDeleteComment} onUpdate={handleUpdateComment} onReport={handleReportComment}/> 
+                        <Comment key={comment.id} comment={comment} postAuthorId={post?.author_id} allowComments={allowComments} onReply={handleReplyClick} allComments={allComments} activeReplyParentId={activeReplyParentId} userProfile={userProfile} onAddComment={handleAddComment} expandedReplies={expandedReplies} onToggleReplies={handleToggleReplies} onDelete={handleDeleteComment} onUpdate={handleUpdateComment} onReport={handleReportComment}/> 
                     ))}
                     {rootComments.length > displayedRootComments.length && (
                         <div className="text-center mt-[12px]">
@@ -416,8 +373,22 @@ export default function CommentsSection({ postId }: { postId: number }) {
                         </div>
                     )}
                 </div>
+            ) : (
+                <>
+                    {allowComments && (
+                        <p className="text-center text-sm mt-[12px]">No comments yet. Be the first to comment...</p>
+                    )}
+                </>
             )}
-            <AddCommentInput userProfile={userProfile} onAddComment={handleAddComment} />
+            
+            {allowComments ? (
+                <AddCommentInput userProfile={userProfile} onAddComment={handleAddComment} />
+            ) : (
+                <div className="text-center text-gray-500 text-sm p-4 bg-gray-100 rounded-md mt-[16px] flex items-center justify-center">
+                    <SlBan className='mr-[8px]'/>
+                    <span>{postAuthorName} has disabled comments for this post.</span>
+                </div>
+            )}
         </div>
     );
 }

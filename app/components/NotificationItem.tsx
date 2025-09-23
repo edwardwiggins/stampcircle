@@ -65,6 +65,10 @@ export default function NotificationItem({ notification }: NotificationItemProps
             message = notification.entity_type === 'post' ? 'reacted to your post.' : 'reacted to your comment.';
             link = `/post/${notification.data.post_id}`;
             break;
+        case 'share':
+            message = 'shared your post.';
+            link = `/post/${notification.data.entity_id}`; // Link to the new share post
+            break;
         default:
             message = 'sent you a notification.';
     }
