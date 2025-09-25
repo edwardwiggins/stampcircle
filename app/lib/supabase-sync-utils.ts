@@ -9,7 +9,6 @@ let isSyncingPosts = false;
 let isSyncingComments = false;
 let isSyncingReactions = false;
 
-// --- UPDATED FUNCTION TO SYNC CONNECTIONS AND FOLLOWS ---
 export async function syncUserSocialGraph(userId: string) {
     if (!supabase || !userId) return;
 
@@ -19,7 +18,7 @@ export async function syncUserSocialGraph(userId: string) {
                 .from('social_user_connections')
                 .select('*')
                 .or(`user_id.eq.${userId},target_user_id.eq.${userId}`)
-                .eq('status', 'active'),
+                .in('status', ['active', 'pending']),
             supabase
                 .from('social_user_follows')
                 .select('*')
@@ -29,27 +28,23 @@ export async function syncUserSocialGraph(userId: string) {
         if (connectionsResult.error) throw connectionsResult.error;
         if (followsResult.error) throw followsResult.error;
         
-        // --- NEW DE-DUPLICATION LOGIC ---
         const rawConnections = connectionsResult.data || [];
         const uniqueConnectionKeys = new Set<string>();
         const uniqueConnections: LocalUserConnection[] = [];
 
         for (const conn of rawConnections) {
-            // Create a consistent key for each connection pair (e.g., "id1-id2") by sorting the IDs
             const key = [conn.user_id, conn.target_user_id].sort().join('-');
             if (!uniqueConnectionKeys.has(key)) {
                 uniqueConnectionKeys.add(key);
                 uniqueConnections.push(conn);
             }
         }
-        // --- END OF DE-DUPLICATION LOGIC ---
 
         const follows = followsResult.data || [];
 
         await db.transaction('rw', db.social_user_connections, db.social_user_follows, async () => {
             await db.social_user_connections.clear();
             await db.social_user_follows.clear();
-            // Put the de-duplicated list into the database
             await db.social_user_connections.bulkPut(uniqueConnections);
             await db.social_user_follows.bulkPut(follows);
         });
@@ -59,8 +54,6 @@ export async function syncUserSocialGraph(userId: string) {
     }
 }
 
-
-// --- PAGINATED FEED FETCHING LOGIC ---
 export async function fetchPaginatedFeed(userId: string, page: number, pageSize: number = 10) {
     if (!supabase || !userId) return { posts: [], hasMore: false };
 
@@ -98,8 +91,20 @@ export async function fetchPaginatedFeed(userId: string, page: number, pageSize:
         if (commentsResult.error) throw commentsResult.error;
         if (savedPostsResult.error) throw savedPostsResult.error;
         if (postReactionsResult.error) throw postReactionsResult.error;
-
-        const remotePostTags = postTagsResult.data || [];
+        
+        // --- NEW, MORE ROBUST DE-DUPLICATION LOGIC FOR POST TAGS ---
+        const rawPostTags = postTagsResult.data || [];
+        const postTagsMap = new Map<string, any>();
+        for (const pt of rawPostTags) {
+            const key = `${pt.post_id}-${pt.tag_id}`;
+            // By using a Map, we ensure that each key (and thus each post-tag pair) is only stored once.
+            if (!postTagsMap.has(key)) {
+                postTagsMap.set(key, pt);
+            }
+        }
+        const remotePostTags = Array.from(postTagsMap.values());
+        // --- END OF NEW LOGIC ---
+        
         const remotePostImages = postImagesResult.data || [];
         const remoteComments = commentsResult.data || [];
         const remoteSavedPosts = savedPostsResult.data || [];
@@ -135,7 +140,10 @@ export async function fetchPaginatedFeed(userId: string, page: number, pageSize:
             if (remoteSavedPosts.length > 0) await db.social_saved_posts.bulkPut(remoteSavedPosts);
             if (remotePostReactions.length > 0) await db.social_posts_reactions.bulkPut(remotePostReactions);
             if (remoteCommentReactions && remoteCommentReactions.length > 0) await db.social_comments_reactions.bulkPut(remoteCommentReactions);
-            if (remotePostTags.length > 0) await db.social_post_tags.bulkPut(remotePostTags.map((pt: any) => ({ id: pt.id, post_id: pt.post_id, tag_id: pt.tag_id })));
+            if (remotePostTags.length > 0) {
+                const postTagsToStore = remotePostTags.map((pt: any) => ({ id: pt.id, post_id: pt.post_id, tag_id: pt.tag_id }));
+                await db.social_post_tags.bulkPut(postTagsToStore);
+            }
             
             if (remoteComments.length > 0) {
                 const commentsToStore: LocalComment[] = [];
@@ -160,7 +168,6 @@ export async function fetchPaginatedFeed(userId: string, page: number, pageSize:
 
 
 // --- EXISTING SYNC LOGIC ---
-// (The rest of the file is unchanged)
 
 const extractMentions = (content: string, pattern: RegExp): { display: string, id: string }[] => {
     const matches = [...content.matchAll(pattern)];
@@ -239,7 +246,10 @@ export async function syncLocalPosts() {
 
     try {
         const unsyncedPosts = await db.social_posts.where({ synced: 0 }).toArray();
-        if (unsyncedPosts.length === 0) return;
+        if (unsyncedPosts.length === 0) {
+            isSyncingPosts = false;
+            return;
+        }
 
         for (const post of unsyncedPosts) {
             try {
@@ -367,7 +377,10 @@ export async function syncLocalComments() {
 
     try {
         const unsyncedComments = await db.social_post_comments.where({ synced: 0 }).toArray();
-        if (unsyncedComments.length === 0) return;
+        if (unsyncedComments.length === 0) {
+            isSyncingComments = false;
+            return;
+        }
 
         for (const comment of unsyncedComments) {
             try {

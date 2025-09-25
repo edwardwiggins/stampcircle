@@ -42,7 +42,6 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     );
     
-    // --- STEP 1: PARSE ALL USER-PROVIDED TAGS ---
     const bbCodeTags = extractBbCodeTags(record.post_content);
     const plainTextTags = extractPlainTextTags(record.post_content);
 
@@ -56,7 +55,6 @@ serve(async (req) => {
 
     const unverifiedPlainTextTags = plainTextTags;
 
-    // --- STEP 2: IMMEDIATELY SAVE SUGGESTIONS FOR MODERATION ---
     if (suggestedUserTags.length > 0) {
       const suggestionsToInsert = [...new Set(suggestedUserTags)].map(tagName => ({
         tag_name: tagName.toLowerCase(),
@@ -66,7 +64,6 @@ serve(async (req) => {
       await supabaseClient.from('social_suggested_tags').insert(suggestionsToInsert);
     }
     
-    // --- STEP 3: PREPARE CONTEXT FOR AI ---
     const { data: existingTagsData } = await supabaseClient
       .from('social_tags')
       .select('tag_name')
@@ -81,7 +78,6 @@ serve(async (req) => {
         return new Response(JSON.stringify({ message: 'Post is empty, no tags.' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 });
     }
 
-    // --- STEP 4: CALL AI WITH THE ADVANCED PROMPT ---
     const openai = new OpenAI({ apiKey: Deno.env.get('OPENAI_API_KEY')! });
     const prompt = `
       You are an intelligent content curator for a philatelic social network. A user has submitted a post. Your job is to return a final, clean list of up to 5 relevant and approved hashtags.
@@ -103,7 +99,7 @@ serve(async (req) => {
     `;
 
     const response = await openai.chat.completions.create({
-      model: 'gpt-4o',
+      model: 'gpt-4o-mini',
       messages: [{ role: 'user', content: prompt }],
       response_format: { type: 'json_object' },
     });
@@ -117,7 +113,6 @@ serve(async (req) => {
         }
     }
     
-    // --- STEP 5: SAVE TAGS AND UPDATE POST ---
     const tagIds: number[] = [];
     for (const tagName of [...new Set(finalHashtags)].slice(0, 5)) {
       const cleanTagName = tagName.toLowerCase();
@@ -137,7 +132,13 @@ serve(async (req) => {
     }
     
     const cleanedContentForStorage = (record.post_content || '').replace(/#\[([^\]]+)\]\(([^)]+)\)/g, '').replace(/(?<!\S)#(\w+)/g, '').trim();
-    await supabaseClient.from('social_posts').update({ post_content: cleanedContentForStorage }).eq('id', record.id);
+    
+    // --- THIS IS THE FIX ---
+    // Update the post content AND set tags_processed to true to prevent the trigger from firing again.
+    await supabaseClient.from('social_posts').update({ 
+      post_content: cleanedContentForStorage,
+      tags_processed: true 
+    }).eq('id', record.id);
     
     return new Response(JSON.stringify({ message: `Successfully processed post ${record.id}` }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200,

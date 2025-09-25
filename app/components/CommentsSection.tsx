@@ -1,5 +1,4 @@
 // app/components/CommentsSection.tsx
-
 'use client';
 
 import Image from 'next/image';
@@ -21,7 +20,6 @@ import { parseBBCode } from '@/app/lib/bbcode-parser';
 import Dexie from 'dexie';
 import Reactions from './Reactions';
 
-// --- UPDATED --- Props now take the entire post object
 interface CommentsSectionProps {
     post: LocalPost;
 }
@@ -200,7 +198,7 @@ const Comment = ({
                                     ))}
                                     {newlyUploadedFiles.map((file, index) => (
                                          <div key={file.uuid || index} className="thumbnail">
-                                            {file.cdnUrl && <Image src={`${file.cdnUrl}-/preview/100x100/`} alt="New image" width={60} height={60} className="thumbnail-image" />}
+                                             {file.cdnUrl && <Image src={`${file.cdnUrl}-/preview/100x100/`} alt="New image" width={60} height={60} className="thumbnail-image" />}
                                         </div>
                                     ))}
                                 </div>
@@ -285,13 +283,20 @@ const Comment = ({
 };
 
 export default function CommentsSection({ post }: CommentsSectionProps) {
-    const { userProfile, loading: userLoading, supabase, isDbReady } = useUser();
+    const { userProfile } = useUser();
     const [activeReplyParentId, setActiveReplyParentId] = useState<number | null>(null);
     const [visibleComments, setVisibleComments] = useState(3);
     const [expandedReplies, setExpandedReplies] = useState<Set<number>>(new Set());
+    const { supabase } = useUser();
 
-    // --- UPDATED --- Use the pre-fetched comments from the post object
-    const allComments = post.comments || [];
+    // --- THIS IS THE FIX ---
+    // Instead of relying on post.comments, we query the local DB directly.
+    const allComments = useLiveQuery(
+        () => db.social_post_comments.where('post_id').equals(post.id).toArray(),
+        [post.id], // Dependency array ensures this re-runs if the post ID changes
+        [] // Default value while loading
+    );
+
     const allowComments = post.allow_comments ?? true;
     const postAuthorName = useLiveQuery(() => db.userProfile.get(post.author_id).then(p => p?.displayName || 'The author'), [post.author_id]) || 'The author';
     
@@ -384,9 +389,9 @@ export default function CommentsSection({ post }: CommentsSectionProps) {
             {allowComments ? (
                 <AddCommentInput userProfile={userProfile} onAddComment={handleAddComment} />
             ) : (
-                <div className="text-center text-gray-500 text-sm p-4 bg-gray-100 rounded-md mt-[16px] flex items-center justify-center">
+                <div className="text-center text-gray-500 p-4 bg-gray-100 rounded-md mt-[16px] flex items-center justify-center">
                     <SlBan className='mr-[8px]'/>
-                    <span>{postAuthorName} has disabled comments for this post.</span>
+                    <span className="text-sm">{postAuthorName} has disabled comments for this post.</span>
                 </div>
             )}
         </div>

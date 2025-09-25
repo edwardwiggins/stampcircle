@@ -1,12 +1,13 @@
 // app/page.tsx
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Image from 'next/image';
 import FeedContainer from './components/FeedContainer';
 import NetworkContainer from './components/NetworkContainer';
 import MessagesContainer from './components/MessagesContainer';
 import CollectionContainer from './components/CollectionContainer';
+import OnboardingFlow from './components/onboarding/OnboardingFlow';
 import { SlHome, SlPeople, SlBubbles, SlPieChart, SlBell } from "react-icons/sl";
 import { useUser } from './context/user-context';
 import { useLiveQuery } from 'dexie-react-hooks';
@@ -17,9 +18,22 @@ import ProfileDropdown from './components/ProfileDropdown';
 type View = 'home' | 'network' | 'messages' | 'collection';
 
 export default function Home() {
-    const { userProfile } = useUser();
+    const { userProfile, supabase, updateUserProfile } = useUser();
     const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
     const [activeView, setActiveView] = useState<View>('home');
+    const [showOnboarding, setShowOnboarding] = useState(false);
+
+    // --- THIS IS THE FIX ---
+    // This logic is now more robust. It explicitly hides the modal if onboarding is complete.
+    useEffect(() => {
+        if (userProfile) {
+            if (!userProfile.has_completed_onboarding) {
+                setShowOnboarding(true);
+            } else {
+                setShowOnboarding(false);
+            }
+        }
+    }, [userProfile]);
 
     const unreadCount = useLiveQuery(
         () => userProfile 
@@ -34,6 +48,33 @@ export default function Home() {
     if (!userProfile) {
         return <div>Loading...</div>;
     }
+
+    const handleOnboardingComplete = async () => {
+        if (!userProfile || !supabase) return;
+
+        setShowOnboarding(false);
+
+        try {
+            const updatedProfile = { ...userProfile, has_completed_onboarding: true };
+            
+            // This immediately updates the context's state, which will trigger the useEffect above to run
+            updateUserProfile(updatedProfile);
+
+            // Update the local database
+            await db.userProfile.put(updatedProfile);
+
+            // Update the remote database in the background
+            const { error } = await supabase
+                .from('user_profile')
+                .update({ has_completed_onboarding: true })
+                .eq('user_id', userProfile.user_id);
+            
+            if (error) throw error;
+
+        } catch (error) {
+            console.error("Failed to update onboarding status:", error);
+        }
+    };
 
     const getGreeting = () => {
         const currentHour = new Date().getHours();
@@ -67,6 +108,8 @@ export default function Home() {
 
     return (
         <main>
+            {showOnboarding && <OnboardingFlow onComplete={handleOnboardingComplete} />}
+            
             <header>
                 <div className='header-left'>
                     <h1>StampCircle</h1>

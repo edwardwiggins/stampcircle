@@ -4,16 +4,21 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { createClientSupabaseClient } from '@/app/lib/client-supabase';
+import supabase from '@/app/lib/client-supabase';
 import { useRouter } from 'next/navigation';
 import '@/app/styles/auth-form.css';
+
+// --- NEW HELPER FUNCTION ---
+const capitalizeName = (name: string) => {
+    if (!name) return '';
+    return name.charAt(0).toUpperCase() + name.slice(1).toLowerCase();
+};
 
 export default function SignUpPage() {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [firstName, setFirstName] = useState('');
     const [lastName, setLastName] = useState('');
-    const [displayName, setDisplayName] = useState('');
     const [username, setUsername] = useState('');
     const [suburb, setSuburb] = useState('');
     const [city, setCity] = useState('');
@@ -26,22 +31,21 @@ export default function SignUpPage() {
     // State for real-time username availability check
     const [usernameStatus, setUsernameStatus] = useState<'idle' | 'checking' | 'available' | 'unavailable'>('idle');
     const [debouncedUsername, setDebouncedUsername] = useState(username);
-
-    const supabase = createClientSupabaseClient();
+    
     const router = useRouter();
 
-    // Debounce the username input to avoid checking on every keystroke
+    // Debounce the username input
     useEffect(() => {
         const handler = setTimeout(() => {
             setDebouncedUsername(username);
-        }, 500); // Wait 500ms after user stops typing
+        }, 500);
 
         return () => {
             clearTimeout(handler);
         };
     }, [username]);
 
-    // Check username availability when the debounced username changes
+    // Check username availability
     useEffect(() => {
         if (debouncedUsername.trim().length < 3) {
             setUsernameStatus('idle');
@@ -78,15 +82,20 @@ export default function SignUpPage() {
             return;
         }
 
+        // --- THIS IS THE FIX ---
+        // Capitalize names before sending them to the server
+        const formattedFirstName = capitalizeName(firstName);
+        const formattedLastName = capitalizeName(lastName);
+        const finalDisplayName = `${formattedFirstName} ${formattedLastName}`.trim();
+
         const { data, error } = await supabase.auth.signUp({
             email,
             password,
             options: {
                 data: {
-                    firstName,
-                    lastName,
-                    // Set displayName to be the same as username by default
-                    displayName: displayName || username, 
+                    firstName: formattedFirstName,
+                    lastName: formattedLastName,
+                    displayName: finalDisplayName, 
                     username,
                     suburb,
                     city,
@@ -99,7 +108,6 @@ export default function SignUpPage() {
             setError(error.message);
         } else if (data.user) {
             setMessage('Success! Please check your email to confirm your account.');
-            // Optionally, you can clear the form or redirect here
         }
 
         setLoading(false);

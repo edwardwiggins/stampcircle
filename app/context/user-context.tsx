@@ -1,8 +1,8 @@
+// app/context/user-context.tsx
 'use client';
 
-import { createContext, useContext, useState, useEffect, useMemo } from 'react';
+import { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
 import { User, SupabaseClient } from '@supabase/supabase-js';
-// --- UPDATED --- Import the new sync function
 import { syncLocalPosts, syncLocalComments, syncLocalReactions } from '@/app/lib/supabase-sync-utils';
 import { db } from '@/app/lib/local-db';
 import supabase from '@/app/lib/client-supabase';
@@ -14,6 +14,9 @@ const UserContext = createContext<{
     supabase: SupabaseClient;
     isOffline: boolean;
     isDbReady: boolean;
+    refreshUserProfile: () => Promise<void>;
+    // --- NEW --- Add a function to update the context's state directly
+    updateUserProfile: (profileData: any) => void;
 } | undefined>(undefined);
 
 export function UserProvider({ children }: { children: React.ReactNode }) {
@@ -25,32 +28,51 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     );
     const [isDbReady, setIsDbReady] = useState(false);
 
+    const refreshUserProfile = useCallback(async () => {
+        if (!user) return;
+        try {
+            const { data, error } = await supabase
+                .from('user_profile')
+                .select('*')
+                .eq('user_id', user.id)
+                .single();
+            
+            if (error) throw error;
+            
+            setUserProfile(data);
+            await db.userProfile.put(data);
+        } catch (error) {
+            console.error('Error refreshing user profile:', error);
+        }
+    }, [user]);
+
+    // --- NEW --- Function to manually update the userProfile in the context
+    const updateUserProfile = useCallback((profileData: any) => {
+        setUserProfile(profileData);
+    }, []);
+
     useEffect(() => {
         const fetchUser = async () => {
             const { data: { user } } = await supabase.auth.getUser(); 
             setUser(user);
             if (user) {
-                const { data, error } = await supabase
-                    .from('user_profile')
-                    .select('*')
-                    .eq('user_id', user.id)
-                    .single();
-                if (error) {
-                    console.error('Error fetching user profile:', error.message);
-                } else {
-                    setUserProfile(data);
-                }
+                await refreshUserProfile();
             }
             setLoading(false);
         };
         fetchUser();
-        const { data: { subscription } } = supabase.auth.onAuthStateChange(() => {
-            fetchUser(); 
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+            setUser(session?.user ?? null);
+            if (session?.user) {
+                refreshUserProfile();
+            } else {
+                setUserProfile(null);
+            }
         });
         return () => {
             subscription.unsubscribe();
         };
-    }, []);
+    }, [refreshUserProfile]);
 
     useEffect(() => {
         const handleOnline = () => {
@@ -58,18 +80,14 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
             setIsOffline(false);
             syncLocalPosts();
             syncLocalComments();
-            // --- NEW --- Also sync reactions when connection is restored
             syncLocalReactions();
         };
-
         const handleOffline = () => {
             console.log('Connection lost. Working offline.');
             setIsOffline(true);
         };
-
         window.addEventListener('online', handleOnline);
         window.addEventListener('offline', handleOffline);
-
         return () => {
             window.removeEventListener('online', handleOnline);
             window.removeEventListener('offline', handleOffline);
@@ -92,8 +110,10 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         userProfile,
         supabase,
         isOffline,
-        isDbReady
-    }), [user, loading, userProfile, isOffline, isDbReady]);
+        isDbReady,
+        refreshUserProfile,
+        updateUserProfile // --- NEW --- Provide the new function to the app
+    }), [user, loading, userProfile, isOffline, isDbReady, refreshUserProfile, updateUserProfile]);
 
     return (
         <UserContext.Provider value={value}>

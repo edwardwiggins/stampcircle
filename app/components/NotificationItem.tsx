@@ -69,6 +69,14 @@ export default function NotificationItem({ notification }: NotificationItemProps
             message = 'shared your post.';
             link = `/post/${notification.data.entity_id}`; // Link to the new share post
             break;
+        case 'connection_request':
+            message = 'sent you a Connection Request.';
+            link = '#';
+            break;
+        case 'connection_accepted':
+            message = 'accepted your request to connect.';
+            link = '#';
+            break;
         default:
             message = 'sent you a notification.';
     }

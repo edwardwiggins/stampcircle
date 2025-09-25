@@ -3,7 +3,6 @@
 import type { Metadata } from "next";
 import { Inter } from 'next/font/google';
 import "./globals.css";
-// --- UPDATED --- We only need to import the Providers component now
 import { Providers } from './providers';
 
 export const metadata: Metadata = {
@@ -19,13 +18,13 @@ export default function RootLayout({
  children: React.ReactNode;
 }>) {
  return (
-  <html lang="en">
+  // --- THIS IS THE FIX ---
+  <html lang="en" suppressHydrationWarning={true}>
     <head>
         <link rel="manifest" href="/manifest.json" />
         <meta name="theme-color" content="#000000" />
       </head>
       <body className={inter.className}>
-        {/* --- UPDATED --- The layout is now much cleaner --- */}
         <Providers>
         {children}
         </Providers>

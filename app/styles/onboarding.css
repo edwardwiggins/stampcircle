@@ -1,0 +1,76 @@
+/* app/styles/onboarding.css */
+
+.onboarding-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.6);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+  backdrop-filter: blur(4px);
+}
+
+.onboarding-modal {
+  background-color: white;
+  padding: 40px;
+  border-radius: 12px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+  width: 90%;
+  max-width: 500px;
+  animation: fadeInScale 0.3s ease-out;
+}
+
+.onboarding-button {
+  display: inline-block;
+  background-color: #2563eb; /* A nice blue color */
+  color: white;
+  font-weight: bold;
+  padding: 12px 24px;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  transition: background-color 0.2s ease-in-out;
+  margin-top: 2em;
+}
+
+.onboarding-button:hover {
+  background-color: #1d4ed8; /* A darker blue for hover */
+}
+
+@keyframes fadeInScale {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Onboarding Profile Picture Step */
+
+.uploader-container {
+  display: flex;
+  justify-content: center;
+}
+
+.onboarding-button-secondary {
+  display: inline-block;
+  background-color: transparent;
+  color: #4b5563; /* gray-600 */
+  font-weight: bold;
+  padding: 12px 24px;
+  border-radius: 8px;
+  border: 1px solid #d1d5db; /* gray-300 */
+  cursor: pointer;
+  transition: background-color 0.2s ease-in-out, color 0.2s ease-in-out;
+}
+
+.onboarding-button-secondary:hover {
+  background-color: #f3f4f6; /* gray-100 */
+}
