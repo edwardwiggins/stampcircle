@@ -1,0 +1,101 @@
+/* app/styles/messages.css */
+
+.main-container {
+    display: flex;
+    flex-direction: row;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+}
+
+.conversationlist-container {
+    display: flex;
+    flex-direction: column;
+    width: 34%;
+    height: 100%;
+    border-right: #ccc;
+    overflow-y: scroll;
+}
+
+.conversationview-container {
+    display: flex;
+    flex-direction: column;
+    width: 66%;
+    height: 100%;
+    overflow-y: auto;
+    padding-left: 3em;
+    padding-right: 3em;
+    overflow-y: scroll;
+/*    background-image: url("path/to/your/image.jpg");
+    background-size: cover;
+    background-repeat: no-repeat;
+    background-position: center center;*/
+}
+
+.conversation-block {
+    display: flex;
+    padding: 0.5em;
+    border-bottom: 1px solid #ccc;
+    cursor: pointer;
+    flex-direction: row;
+}
+
+.conversation-block:hover {
+    background-color: #e6e6e6;
+}
+
+.username {
+    font-size: 1em;
+    color: #333;
+}
+
+.conversation {
+    display: flex;
+    flex-direction: column;
+    flex-grow: 1;
+    margin-left: 8px;
+    margin-top: 2px;
+}
+
+.conversation-time {
+    font-size: 1em;
+    color: #333;
+    font-weight: 500;
+}
+
+.conversation-detail {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+}
+/*flex justify-between items-center*/
+
+.message-preview {
+  font-size: 1em;
+  color: #555;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis; /* Equivalent to Tailwind's truncate */
+  margin-top: 2px;
+}
+
+.conversationview-header {
+    position: fixed;
+    top: 0;
+    right: 0;
+    width: 66%;
+    height: 70px;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    flex-direction: row;
+    padding: 0.5rem;
+    border-bottom: 1px solid #ccc;
+    background-color: #f9fafb; /* bg-gray-50 in Tailwind CSS */
+}
+
+.header-conversation-detail {
+    display: flex;
+    flex-direction: column;
+    margin-left: 16px;
+}

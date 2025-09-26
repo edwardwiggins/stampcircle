@@ -3,10 +3,8 @@
 
 import { useState, useEffect } from 'react';
 import Image from 'next/image';
+import Link from 'next/link';
 import FeedContainer from './components/FeedContainer';
-import NetworkContainer from './components/NetworkContainer';
-import MessagesContainer from './components/MessagesContainer';
-import CollectionContainer from './components/CollectionContainer';
 import OnboardingFlow from './components/onboarding/OnboardingFlow';
 import { SlHome, SlPeople, SlBubbles, SlPieChart, SlBell } from "react-icons/sl";
 import { useUser } from './context/user-context';
@@ -14,8 +12,6 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from './lib/local-db';
 import NotificationsPanel from './components/NotificationsPanel';
 import ProfileDropdown from './components/ProfileDropdown';
-
-type View = 'home' | 'network' | 'messages' | 'collection';
 
 export default function Home() {
     const { userProfile, supabase, updateUserProfile } = useUser();
@@ -87,45 +83,26 @@ export default function Home() {
         }
     };
 
-    const renderContent = () => {
-        switch (activeView) {
-            case 'home':
-                return <FeedContainer />;
-            case 'network':
-                return <NetworkContainer />;
-            case 'messages':
-                return <MessagesContainer />;
-            case 'collection':
-                return <CollectionContainer />;
-            default:
-                return <FeedContainer />;
-        }
-    };
-
-    const getIconClass = (view: View) => {
-        return `icon cursor-pointer ${activeView === view ? 'text-blue-600' : 'text-gray-700'}`;
-    };
-
     return (
         <main>
             {showOnboarding && <OnboardingFlow onComplete={handleOnboardingComplete} />}
             
             <header>
                 <div className='header-left'>
-                    <h1>StampCircle</h1>
+                    <h2>StampCircle</h2>
                 </div>
                 <div className='header-middle'>
-                    <div className='topmenu' onClick={() => setActiveView('home')}>
-                        <SlHome className={getIconClass('home')} size={30} data-tooltip-id="app-tooltip" data-tooltip-content="Home Feed" />
+                    <div className='topmenu' data-tooltip-id="app-tooltip" data-tooltip-content="Home Feed" >
+                        <SlHome className='icon' size={26} />
                     </div>
-                    <div className='topmenu' onClick={() => setActiveView('network')}>
-                        <SlPeople className={getIconClass('network')} size={30} data-tooltip-id="app-tooltip" data-tooltip-content="My Network" />
+                    <div className='topmenu' data-tooltip-id="app-tooltip" data-tooltip-content="My Network" >
+                        <SlPeople className='icon' size={26} />
                     </div>
-                    <div className='topmenu' onClick={() => setActiveView('messages')}>
-                        <SlBubbles className={getIconClass('messages')} size={30} data-tooltip-id="app-tooltip" data-tooltip-content="Messages" />
-                    </div>
-                    <div className='topmenu' onClick={() => setActiveView('collection')}>
-                        <SlPieChart className={getIconClass('collection')} size={30} data-tooltip-id="app-tooltip" data-tooltip-content="My Collection" />
+                    <Link href="/messages" className='topmenu' data-tooltip-id="app-tooltip" data-tooltip-content="Messages" >
+                            <SlBubbles className='icon' size={26} />
+                    </Link>
+                    <div className='topmenu' data-tooltip-id="app-tooltip" data-tooltip-content="My Collection" >
+                        <SlPieChart className='icon' size={26} />
                     </div>
                 </div>
                 <div className='header-right'>
@@ -135,15 +112,15 @@ export default function Home() {
                         data-tooltip-id="app-tooltip" 
                         data-tooltip-content="Notifications"
                     >
-                        <SlBell className='icon absolute right-[14px]' size={30} />
+                        <SlBell className='icon absolute right-[14px]' size={26} />
                         {unreadCount > 0 && (
-                            <span className="absolute top-[2px] right-[16px] block h-5 w-5 rounded-full bg-red-500 text-white text-xs flex items-center justify-center">
+                            <span className='unread-count'>
                                 {unreadCount}
                             </span>
                         )}
                     </div>
                     
-                    <div className='topmenu-right'>
+                    <div className='topmenu-right justify-center mb-[4px]'>
                        <ProfileDropdown userProfile={userProfile} />
                     </div>
                 </div>
@@ -170,7 +147,7 @@ export default function Home() {
                     </div>
                 </aside>
                 <div className='content'>
-                    {renderContent()}
+                    <FeedContainer />
                 </div>
                 <aside className='right-sidebar'>
                     <h2>Extras</h2>

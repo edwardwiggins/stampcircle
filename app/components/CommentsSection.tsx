@@ -389,9 +389,9 @@ export default function CommentsSection({ post }: CommentsSectionProps) {
             {allowComments ? (
                 <AddCommentInput userProfile={userProfile} onAddComment={handleAddComment} />
             ) : (
-                <div className="text-center text-gray-500 p-4 bg-gray-100 rounded-md mt-[16px] flex items-center justify-center">
-                    <SlBan className='mr-[8px]'/>
-                    <span className="text-sm">{postAuthorName} has disabled comments for this post.</span>
+                <div className="text-center p-4 bg-gray-100 rounded-md mt-[16px] flex items-center justify-center">
+                    <SlBan className='post-icon-disabled mr-[8px]'/>
+                    <span className="comments-disabled">{postAuthorName} has disabled comments for this post.</span>
                 </div>
             )}
         </div>

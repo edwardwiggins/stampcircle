@@ -21,10 +21,8 @@ import SharePostModal from './SharePostModal';
 import { syncLocalPosts, syncUserSocialGraph } from '@/app/lib/supabase-sync-utils';
 import toast from 'react-hot-toast';
 import supabase from '@/app/lib/client-supabase';
-
 import { MentionsInput, Mention } from 'react-mentions';
 import '@/app/styles/mentions-input.css';
-
 import RelationshipBadge from './RelationshipBadge';
 import SocialProof from './SocialProof';
 import { useRelationshipStatus } from '@/app/hooks/useRelationshipStatus';

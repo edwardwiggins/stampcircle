@@ -38,8 +38,8 @@ export default function ProfileDropdown({ userProfile }: ProfileDropdownProps) {
                 className='avatar cursor-pointer'
                 src={userProfile.profileImage || '/default-avatar.jpg'} 
                 alt={`${userProfile.displayName || 'User'}'s Avatar`}
-                width={60} 
-                height={60}
+                width={36} 
+                height={36}
                 onClick={() => setIsOpen(!isOpen)}
             />
 

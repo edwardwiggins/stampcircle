@@ -109,6 +109,11 @@
   cursor: pointer;
 }
 
+.comments-disabled {
+  font-size: 0.8em;
+  color: crimson;
+}
+
 /*.deleted-placeholder-content {
   display: flex;
   align-items: center;
