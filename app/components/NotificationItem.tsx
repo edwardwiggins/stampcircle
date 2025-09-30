@@ -77,6 +77,10 @@ export default function NotificationItem({ notification }: NotificationItemProps
             message = 'accepted your request to connect.';
             link = '#';
             break;
+        case 'new_message':
+            message = 'sent you a new Direct Message.';
+            link = '#';
+            break;
         default:
             message = 'sent you a notification.';
     }

@@ -37,8 +37,8 @@ export default function LogoutButton() {
     };
 
     return (
-        <button onClick={handleLogout} className="logout-button">
-            <SlLogout className="mr-2" />
+        <button onClick={handleLogout} className="logout-button-dropdown">
+            <SlLogout className="mr-[8px]" />
             Logout
         </button>
     );

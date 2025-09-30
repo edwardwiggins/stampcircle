@@ -1,101 +1,202 @@
 /* app/styles/messages.css */
 
 .main-container {
-    display: flex;
-    flex-direction: row;
-    width: 100%;
-    height: 100%;
-    overflow: hidden;
+  display: flex;
+  width: 100%;
+  height: 100vh;
+  overflow: hidden;
 }
 
 .conversationlist-container {
-    display: flex;
-    flex-direction: column;
-    width: 34%;
-    height: 100%;
-    border-right: #ccc;
-    overflow-y: scroll;
+  display: flex;
+  flex-direction: column;
+  width: 30%;
+  height: 100%;
+  border-right: 1px solid #ccc;
+  margin-top: 86px;
 }
 
 .conversationview-container {
+  display: flex;
+  flex-direction: column;
+  width: 70%;
+  height: 100%;
+}
+
+/* This is the new main wrapper inside the ConversationView component */
+.conversation-view-wrapper {
     display: flex;
     flex-direction: column;
-    width: 66%;
     height: 100%;
-    overflow-y: auto;
-    padding-left: 3em;
-    padding-right: 3em;
-    overflow-y: scroll;
-/*    background-image: url("path/to/your/image.jpg");
-    background-size: cover;
-    background-repeat: no-repeat;
-    background-position: center center;*/
-}
-
-.conversation-block {
-    display: flex;
-    padding: 0.5em;
-    border-bottom: 1px solid #ccc;
-    cursor: pointer;
-    flex-direction: row;
-}
-
-.conversation-block:hover {
-    background-color: #e6e6e6;
-}
-
-.username {
-    font-size: 1em;
-    color: #333;
-}
-
-.conversation {
-    display: flex;
-    flex-direction: column;
-    flex-grow: 1;
-    margin-left: 8px;
-    margin-top: 2px;
-}
-
-.conversation-time {
-    font-size: 1em;
-    color: #333;
-    font-weight: 500;
-}
-
-.conversation-detail {
-    display: flex;
-    flex-direction: row;
-    justify-content: space-between;
-}
-/*flex justify-between items-center*/
-
-.message-preview {
-  font-size: 1em;
-  color: #555;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis; /* Equivalent to Tailwind's truncate */
-  margin-top: 2px;
+    position: relative; /* This is the anchor for the floating button */
+    padding-top: 1em;
 }
 
 .conversationview-header {
-    position: fixed;
-    top: 0;
-    right: 0;
-    width: 66%;
-    height: 70px;
-    z-index: 100;
+    flex-shrink: 0; /* Prevents header from shrinking */
     display: flex;
     align-items: center;
-    flex-direction: row;
-    padding: 0.5rem;
+    height: 70px;
+    margin-top: 70px;
+    padding: 0.5rem 3em;
     border-bottom: 1px solid #ccc;
-    background-color: #f9fafb; /* bg-gray-50 in Tailwind CSS */
+    background-color: #e9e9e9;
+    position: sticky; /* Makes the header stick to the top */
+    top: 0;
+    z-index: 10;
 }
 
 .header-conversation-detail {
-    display: flex;
-    flex-direction: column;
-    margin-left: 16px;
+  margin-left: 16px;
 }
+
+.message-area-container {
+    flex-grow: 1; /* Makes the message area fill all available space */
+    overflow-y: auto; /* Makes this the scrollable element */
+    padding: 1rem 3em;
+    background-color: #f1f1f1;
+    background-image: url('/messages_bg.jpg');
+    background-repeat: no-repeat;
+    background-position: center center;
+    background-size: cover;
+    background-attachment: fixed;
+}
+
+.message-input-footer {
+    flex-shrink: 0; /* Prevents footer from shrinking */
+    padding: 1rem 3em;
+    background-color: #f9fafb;
+    border-top: 1px solid #ccc;
+}
+
+/* --- CONVERSATION LIST STYLES (Unchanged) --- */
+.conversation-block {
+  display: flex;
+  padding: 0.5em;
+  border-bottom: 1px solid #ccc;
+  cursor: pointer;
+  flex-direction: row;
+}
+
+.conversation-block:hover {
+  background-color: #e6e6e6;
+}
+
+.username {
+  font-size: 1em;
+  color: #333;
+}
+
+.conversation {
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+  margin-left: 8px;
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.conversation-time {
+  font-size: 1em;
+  color: #333;
+  font-weight: 500;
+}
+
+.conversation-detail {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+}
+
+.message-preview {
+ font-size: 1em;
+ color: #555;
+ overflow: hidden;
+ white-space: nowrap;
+ text-overflow: ellipsis;
+ margin-top: 2px;
+}
+
+.cv-button {
+  height: 2.75em;
+  width: 2.75em;
+  padding: 0.35rem;
+  border-radius: 50%;
+  background-color: rgba(0, 128, 128, 0.50);
+  color: whitesmoke;
+  border: none;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0),
+              0 2px 4px -2px rgba(0, 0, 0, 0); /* shadow-lg */
+  transition: background-color 0.15s ease-in-out; /* For smooth hover transition */
+  cursor: pointer;
+  position: absolute;
+  bottom: 80px;
+  right: 1.5em;
+  z-index: 10;
+}
+
+.cv-button:hover {
+  background-color: teal;
+}
+
+.context-menu-button {
+  height: 2em;
+  width: 2em;
+  padding: 0.3rem;
+  border-radius: 50%;
+  background-color: #555;
+  color: whitesmoke;
+  border: none;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0),
+              0 2px 4px -2px rgba(0, 0, 0, 0); /* shadow-lg */
+  cursor: pointer;
+}
+
+.context-menu-button:hover {
+  background-color: teal;
+}
+
+.message-bubble-sender {
+  display: flex;
+  flex-direction: column;
+  text-align: right;
+  border: 1px solid teal;
+  background-color: rgb(123, 194, 194);
+  margin-bottom: 16px;
+  width: fit-content;
+  max-width: 75%;
+  border-radius: 8px;
+  padding-top: 0.5em;
+  padding-bottom: 0.5em;
+  padding-left: 1em;
+  padding-right: 1em;
+  order: 2;
+}
+
+.message-bubble-receiver {
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+  border: 1px solid #ccc;
+  background-color: whitesmoke;
+  margin-bottom: 16px;
+  width: fit-content;
+  border-radius: 8px;
+  padding-top: 0.5em;
+  padding-bottom: 0.5em;
+  padding-left: 1em;
+  padding-right: 1em;
+  order: 1;
+}
+
+.message-group {
+  display: flex;
+  flex-direction: row;
+  max-width: 75%;
+}
+/*
+.message-group:hover .test {
+  padding: 1em;
+}*/
