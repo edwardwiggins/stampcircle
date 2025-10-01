@@ -164,14 +164,14 @@
   text-align: right;
   border: 1px solid teal;
   background-color: rgb(123, 194, 194);
-  margin-bottom: 16px;
+  margin-bottom: 32px;
   width: fit-content;
   max-width: 75%;
   border-radius: 8px;
-  padding-top: 0.5em;
-  padding-bottom: 0.5em;
-  padding-left: 1em;
-  padding-right: 1em;
+  padding-top: 0.25em;
+  padding-bottom: 0.25em;
+  padding-left: 0.5em;
+  padding-right: 0.5em;
   order: 2;
 }
 
@@ -180,15 +180,32 @@
   flex-direction: column;
   text-align: left;
   border: 1px solid #ccc;
-  background-color: whitesmoke;
-  margin-bottom: 16px;
+  background-color: #f1f1f1;
+  margin-bottom: 32px;
   width: fit-content;
   border-radius: 8px;
-  padding-top: 0.5em;
-  padding-bottom: 0.5em;
-  padding-left: 1em;
-  padding-right: 1em;
+  padding-top: 0.25em;
+  padding-bottom: 0.25em;
+  padding-left: 0.5em;
+  padding-right: 0.5em;
   order: 1;
+}
+
+.message-bubble-reply {
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+  border: 1px solid #ccc;
+  background-color: whitesmoke;
+  margin-bottom: 8px;
+  margin-left: -0.25em;
+  margin-right: -0.25em;
+  width: fit-content;
+  border-radius: 8px;
+  padding-top: 0.25em;
+  padding-bottom: 0.25em;
+  padding-left: 0.5em;
+  padding-right: 0.5em;
 }
 
 .message-group {

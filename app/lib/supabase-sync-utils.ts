@@ -490,14 +490,17 @@ export async function syncLocalReactions(supabase: SupabaseClient) {
 
  try {
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return;
+  if (!user) {
+        isSyncingReactions = false;
+        return;
+    };
 
   const unsyncedPostReactions = await db.social_posts_reactions.where({ synced: 0, user_id: user.id }).toArray();
   for (const reaction of unsyncedPostReactions) {
    try {
     if (reaction.is_deleted) {
      await supabase.rpc('delete_post_reaction', { p_post_id: reaction.post_id });
-     await db.social_posts_reactions.delete(reaction.id);
+     await db.social_posts_reactions.delete(reaction.id!);
     } else {
      await supabase.rpc('delete_post_reaction', { p_post_id: reaction.post_id });
      const { data, error } = await supabase.rpc('add_post_reaction', { 
@@ -507,7 +510,7 @@ export async function syncLocalReactions(supabase: SupabaseClient) {
      if (error) throw error;
      
      const newId = data.id;
-     await db.social_posts_reactions.delete(reaction.id);
+     await db.social_posts_reactions.delete(reaction.id!);
      await db.social_posts_reactions.put({ ...reaction, id: newId, synced: 1, is_deleted: false });
     }
    } catch (syncError) {
@@ -520,7 +523,7 @@ export async function syncLocalReactions(supabase: SupabaseClient) {
    try {
     if (reaction.is_deleted) {
      await supabase.rpc('delete_comment_reaction', { p_comment_id: reaction.comment_id });
-     await db.social_comments_reactions.delete(reaction.id);
+     await db.social_comments_reactions.delete(reaction.id!);
     } else {
      await supabase.rpc('delete_comment_reaction', { p_comment_id: reaction.comment_id });
      const { data, error } = await supabase.rpc('add_comment_reaction', { 
@@ -530,13 +533,36 @@ export async function syncLocalReactions(supabase: SupabaseClient) {
      if (error) throw error;
      
      const newId = data.id;
-     await db.social_comments_reactions.delete(reaction.id);
+     await db.social_comments_reactions.delete(reaction.id!);
      await db.social_comments_reactions.put({ ...reaction, id: newId, synced: 1, is_deleted: false });
     }
    } catch (syncError) {
     console.error(`Failed to sync comment reaction for comment ${reaction.comment_id}:`, syncError);
    }
   }
+
+    const unsyncedMessageReactions = await db.social_direct_message_reactions.where({ synced: 0, user_id: user.id }).toArray();
+    for (const reaction of unsyncedMessageReactions) {
+        try {
+            if (reaction.is_deleted) {
+                await supabase.rpc('delete_message_reaction', { p_message_id: reaction.message_id });
+                await db.social_direct_message_reactions.delete(reaction.id!);
+            } else {
+                await supabase.rpc('delete_message_reaction', { p_message_id: reaction.message_id });
+                const { data, error } = await supabase.rpc('add_message_reaction', { 
+                    p_message_id: reaction.message_id, 
+                    p_reaction_id: reaction.reaction_id 
+                });
+                if (error) throw error;
+                
+                const newId = data.id;
+                await db.social_direct_message_reactions.delete(reaction.id!);
+                await db.social_direct_message_reactions.put({ ...reaction, id: newId, synced: 1, is_deleted: false });
+            }
+        } catch (syncError) {
+            console.error(`Failed to sync message reaction for message ${reaction.message_id}:`, syncError);
+        }
+    }
 
  } catch (error) {
   console.error('Error during reactions synchronization process:', error);
@@ -569,140 +595,167 @@ export async function findOrCreateConversation(supabase: SupabaseClient, current
 }
 
 export async function createLocalDirectMessage(messageData: {
-    conversation_id: number;
-    sending_user_id: string;
-    direct_message: string;
+  conversation_id: number;
+  sending_user_id: string;
+  direct_message: string;
+  attachments?: OutputFileEntry[];
+  reply_to_message_id?: number | null;
 }) {
-    try {
-        const tempId = -Date.now();
-        const localMessage: LocalDirectMessage = {
-            id: tempId,
-            created_at: new Date().toISOString(),
-            sending_user_id: messageData.sending_user_id,
-            conversation_id: messageData.conversation_id,
-            direct_message: messageData.direct_message,
-            is_read: 0,
-            synced: 0,
-        };
-        await db.social_user_direct_messages.add(localMessage);
-        return localMessage;
-    } catch (error) {
-        console.error('Failed to save direct message to local DB:', error);
-        throw error;
-    }
+  try {
+    const tempId = -Date.now();
+    const localMessage: LocalDirectMessage = {
+      id: tempId,
+      created_at: new Date().toISOString(),
+      sending_user_id: messageData.sending_user_id,
+      conversation_id: messageData.conversation_id,
+      direct_message: messageData.direct_message,
+      reply_to_message_id: messageData.reply_to_message_id,
+      is_read: 0,
+      synced: 0,
+      attachments: messageData.attachments || [], // Save attachments locally
+    };
+    await db.social_user_direct_messages.add(localMessage);
+    return localMessage;
+  } catch (error) {
+    console.error('Failed to save direct message to local DB:', error);
+    throw error;
+  }
 }
 
 export async function syncLocalDirectMessages(supabase: SupabaseClient) {
-    if (isSyncingDirectMessages || !navigator.onLine) return;
-    isSyncingDirectMessages = true;
+  if (isSyncingDirectMessages || !navigator.onLine) return;
+  isSyncingDirectMessages = true;
 
-    try {
-        const unsyncedMessages = await db.social_user_direct_messages.where({ synced: 0 }).toArray();
-        if (unsyncedMessages.length === 0) {
+  try {
+    const unsyncedMessages = await db.social_user_direct_messages.where({ synced: 0 }).toArray();
+    if (unsyncedMessages.length === 0) {
             isSyncingDirectMessages = false;
             return;
         }
 
-        for (const message of unsyncedMessages) {
-            try {
-                if (message.id && message.id < 0) {
-                    const tempId = message.id;
-                    const messageToInsert = {
-                        sending_user_id: message.sending_user_id,
-                        conversation_id: message.conversation_id,
-                        direct_message: message.direct_message,
-                        created_at: message.created_at
-                    };
-                    
-                    const { data: newDbMessage, error } = await supabase
-                        .from('social_user_direct_messages')
-                        .insert(messageToInsert)
-                        .select()
-                        .single();
+    for (const message of unsyncedMessages) {
+      try {
+        if (message.id && message.id < 0) {
+          const tempId = message.id;
+          const { data: newDbMessage, error } = await supabase
+            .from('social_user_direct_messages')
+            .insert({
+                            sending_user_id: message.sending_user_id,
+                            conversation_id: message.conversation_id,
+                            direct_message: message.direct_message,
+                            created_at: message.created_at,
+                            reply_to_message_id: message.reply_to_message_id,
+                        })
+            .select()
+            .single();
 
-                    if (error) throw error;
+          if (error) throw error;
+          if (newDbMessage) {
+                        // --- THE FIX IS HERE ---
+                        if (message.attachments && message.attachments.length > 0) {
+                            const attachmentsToInsert = message.attachments.map(file => ({
+                                message_id: newDbMessage.id,
+                                user_id: newDbMessage.sending_user_id,
+                                file_path: file.cdnUrl!,
+                                file_type: file.mimeType,
+                                file_name: file.fileInfo?.originalFilename
+                            }));
 
-                    if (newDbMessage) {
-                        await db.transaction('rw', db.social_user_direct_messages, async () => {
-                            await db.social_user_direct_messages.delete(tempId);
-                            await db.social_user_direct_messages.put({
+                            // 1. Insert into Supabase and get the final records back
+                            const { data: newAttachments, error: attachmentError } = await supabase
+                                .from('social_message_attachments')
+                                .insert(attachmentsToInsert)
+                                .select();
+                            
+                            if (attachmentError) throw attachmentError;
+
+                            // 2. CRITICAL STEP: Save the final attachment records to the local DB
+                            if (newAttachments) {
+                                await db.social_message_attachments.bulkPut(newAttachments);
+                            }
+                        }
+
+            await db.transaction('rw', db.social_user_direct_messages, async () => {
+              await db.social_user_direct_messages.delete(tempId);
+                            // Now we put the final message, without the temporary 'attachments' property
+                            const { attachments, ...restOfMessage } = message;
+              await db.social_user_direct_messages.put({
+                ...restOfMessage,
                                 ...newDbMessage,
-                                is_read: newDbMessage.is_read ? 1 : 0,
-                                synced: 1,
-                            });
-                        });
-                        // Update the last_message_at for the conversation
-                        await supabase.from('social_conversations').update({ last_message_at: newDbMessage.created_at }).eq('id', newDbMessage.conversation_id);
-                    }
-                }
-            } catch (syncError) {
-                console.error(`Failed to sync direct message with temp id ${message.id}:`, syncError);
-            }
+                is_read: newDbMessage.is_read ? 1 : 0,
+                synced: 1,
+              });
+            });
+            await supabase.from('social_conversations').update({ last_message_at: newDbMessage.created_at }).eq('id', newDbMessage.conversation_id);
+          }
         }
-    } catch (error) {
-        console.error('Error during direct message synchronization process:', error);
-    } finally {
-        isSyncingDirectMessages = false;
+      } catch (syncError) {
+        console.error(`Failed to sync direct message with temp id ${message.id}:`, syncError);
+      }
     }
+  } catch (error) {
+    console.error('Error during direct message synchronization process:', error);
+  } finally {
+    isSyncingDirectMessages = false;
+  }
 }
 
 export async function reconcileMessages(supabase: SupabaseClient, userId: string) {
   if (!navigator.onLine || !userId) return;
 
   try {
-        // 1. Get the IDs of all conversations the user is part of
-        const { data: participantRecords, error: pError } = await supabase
-            .from('social_conversation_participants')
-            .select('conversation_id')
-            .eq('user_id', userId);
-
+    const { data: participantRecords, error: pError } = await supabase.from('social_conversation_participants').select('conversation_id').eq('user_id', userId);
         if (pError) throw pError;
         const conversationIds = participantRecords.map(p => p.conversation_id);
         if (conversationIds.length === 0) return;
 
-    // 2. Fetch those conversations and ALL of their participants
     const { data: conversations, error: convoError } = await supabase
       .from('social_conversations')
       .select(`*, social_conversation_participants!inner(*)`)
       .in('id', conversationIds);
-
     if (convoError) throw convoError;
     if (!conversations || conversations.length === 0) return;
 
-        // 3. Save the fetched data to the local DB
     await db.social_conversations.bulkPut(conversations);
     const allParticipants = conversations.flatMap(c => c.social_conversation_participants);
     await db.social_conversation_participants.bulkPut(allParticipants);
 
-    // 4. Find the newest message we have locally for any of these conversations
-    const sortedMessages = await db.social_user_direct_messages
-            .where('conversation_id').anyOf(conversationIds)
-            .sortBy('created_at');
+    const sortedMessages = await db.social_user_direct_messages.where('conversation_id').anyOf(conversationIds).sortBy('created_at');
         const lastLocalMessage = sortedMessages.length > 0 ? sortedMessages[sortedMessages.length - 1] : undefined;
-
     const lastSyncTimestamp = lastLocalMessage ? lastLocalMessage.created_at : new Date(0).toISOString();
 
-    // 5. Fetch all messages from these conversations that are newer than our last sync
+        // --- UPDATED LOGIC ---
+    // First, fetch the new messages
     const { data: newMessages, error: messagesError } = await supabase
       .from('social_user_direct_messages')
-      .select('*')
+      .select('*') 
       .in('conversation_id', conversationIds)
       .gt('created_at', lastSyncTimestamp);
 
     if (messagesError) throw messagesError;
 
     if (newMessages && newMessages.length > 0) {
-      const messagesToStore = newMessages.map(msg => ({
-        ...msg,
-        synced: 1,
-        is_read: msg.is_read ? 1 : 0,
-      }));
-      await db.social_user_direct_messages.bulkPut(messagesToStore);
+            const messagesToStore = newMessages.map(msg => ({ ...msg, synced: 1, is_read: msg.is_read ? 1 : 0 }));
+            await db.social_user_direct_messages.bulkPut(messagesToStore);
+
+            // Second, fetch the attachments for ONLY those new messages
+            const messageIds = newMessages.map(m => m.id);
+            const { data: attachments, error: attachmentsError } = await supabase
+                .from('social_message_attachments')
+                .select('*')
+                .in('message_id', messageIds);
+
+            if (attachmentsError) throw attachmentsError;
+            
+            if (attachments && attachments.length > 0) {
+                await db.social_message_attachments.bulkPut(attachments);
+            }
     }
   } catch (error) {
     console.error('Failed to reconcile messages:', error);
   }
 }
+
 
 export async function deleteMessageForMe(messageId: number, userId: string) {
   try {

@@ -7,22 +7,85 @@ import { db, LocalDirectMessage } from '@/app/lib/local-db';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { createLocalDirectMessage, deleteMessageForMe, deleteMessageForEveryone, syncDeletedMessages, syncLocalDirectMessages } from '@/app/lib/supabase-sync-utils';
 import Image from 'next/image';
-import { FiSend, FiPaperclip, FiTrash, FiXCircle, FiCheck, FiCheckCircle } from 'react-icons/fi';
+import { FiSend, FiPaperclip, FiTrash, FiXCircle, FiCheck, FiCheckCircle, FiEdit3, FiX } from 'react-icons/fi';
 import { TfiAngleDoubleDown, TfiMoreAlt } from "react-icons/tfi";
 import { BsEmojiSmile } from 'react-icons/bs';
 import { RealtimeChannel } from '@supabase/supabase-js';
 import '@/app/styles/messages.css';
 import { DotLottieReact } from '@lottiefiles/dotlottie-react';
-import typingAnimation from '@/public/animations/typing.json';
+import { FileUploaderRegular, OutputFileEntry, OutputCollectionState } from '@uploadcare/react-uploader';
+import '@uploadcare/react-uploader/core.css';
+import Reactions from '../Reactions';
 
 interface ConversationViewProps {
   conversationId: number;
   partnerId: string;
 }
 
+// --- NEW --- Component to display the quoted reply message
+const ReplyPreview = ({ messageId }: { messageId: number }) => {
+    const originalMessage = useLiveQuery(() => 
+        db.social_user_direct_messages.get(messageId), 
+        [messageId]
+    );
+
+    const author = useLiveQuery(() => 
+        originalMessage ? db.userProfile.get(originalMessage.sending_user_id) : undefined,
+        [originalMessage]
+    );
+
+    if (!originalMessage || !author) {
+        // This handles cases where the original message was deleted, per our design decision
+        return null; 
+    }
+
+    return (
+        <div className="message-bubble-reply">
+            <p className="reply-author">{author.displayName}</p>
+            <p className="reply-content">{originalMessage.direct_message}</p>
+        </div>
+    );
+};
+
 const ReadReceipt = ({ isRead }: { isRead: boolean }) => {
   if (isRead) { return <FiCheckCircle size={16} className="text-blue-400" />; }
   return <FiCheck size={16} className="text-gray-400" />;
+};
+
+const MessageAttachments = ({ message }: { message: LocalDirectMessage }) => {
+    // For newly sent messages, attachments are stored directly on the message object
+    const localAttachments = message.attachments || [];
+    
+    // For synced messages, we query the attachments table
+    const syncedAttachments = useLiveQuery(() => 
+        message.id > 0 ? db.social_message_attachments.where({ message_id: message.id }).toArray() : [],
+        [message.id]
+    ) || [];
+
+    const allAttachments = [...localAttachments, ...syncedAttachments];
+
+    if (allAttachments.length === 0) return null;
+
+    return (
+        <div className="mt-2 grid grid-cols-2 gap-2">
+            {allAttachments.map((att, index) => {
+                const url = (att as LocalMessageAttachment).file_path || (att as OutputFileEntry).cdnUrl;
+                if (!url) return null;
+                
+                return (
+                    <div key={(att as any).id || (att as any).uuid || index} className="relative">
+                        <Image 
+                            src={`${url}-/preview/200x200/`}
+                            alt={'attachment'}
+                            width={200}
+                            height={200}
+                            className="rounded-lg object-cover"
+                        />
+                    </div>
+                );
+            })}
+        </div>
+    );
 };
 
 const ConversationView = ({ conversationId, partnerId }: ConversationViewProps) => {
@@ -36,6 +99,9 @@ const ConversationView = ({ conversationId, partnerId }: ConversationViewProps) 
   const isInitialLoad = useRef(true);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const channelRef = useRef<RealtimeChannel | null>(null);
+  const [filesToUpload, setFilesToUpload] = useState<OutputFileEntry[]>([]);
+  const [showUploader, setShowUploader] = useState(false);
+  const [replyingTo, setReplyingTo] = useState<LocalDirectMessage | null>(null);
 
   const partnerProfile = useLiveQuery(() => 
     db.userProfile.get(partnerId),
@@ -66,23 +132,32 @@ const ConversationView = ({ conversationId, partnerId }: ConversationViewProps) 
     channelRef.current = channel;
 
     channel.on('postgres_changes', { 
-      event: '*', 
-      schema: 'public', 
-      table: 'social_user_direct_messages',
-            filter: `conversation_id=eq.${conversationId}`
-    }, (payload) => {
-      console.log('[ConversationView] Realtime event received:', payload);
-            const record = payload.new as any; // Cast to any to handle is_read boolean
-      if (payload.eventType === 'INSERT') {
-                // --- UPDATED --- Convert boolean to number (1/0)
-        const newMessage = { ...record, synced: 1, is_read: record.is_read ? 1 : 0 };
-                db.social_user_direct_messages.put(newMessage);
-      } else if (payload.eventType === 'UPDATE') {
-                // --- UPDATED --- Convert boolean to number (1/0)
-                const updatedMessage = { ...record, synced: 1, is_read: record.is_read ? 1 : 0 };
-        db.social_user_direct_messages.update(record.id, updatedMessage);
-      }
-    });
+          event: '*', 
+          schema: 'public', 
+          table: 'social_user_direct_messages',
+          filter: `conversation_id=eq.${conversationId}`
+      }, async (payload) => { // --- UPDATED --- Made the function async
+          const record = payload.new as any;
+          if (payload.eventType === 'INSERT') {
+              const newMessage = { ...record, synced: 1, is_read: record.is_read ? 1 : 0 };
+              await db.social_user_direct_messages.put(newMessage);
+              
+              // --- NEW --- After receiving a message, check for and fetch its attachments
+              const { data: attachments, error } = await supabase
+                .from('social_message_attachments')
+                .select('*')
+                .eq('message_id', newMessage.id);
+
+              if (error) console.error("Failed to fetch attachments for new message:", error);
+              if (attachments && attachments.length > 0) {
+                await db.social_message_attachments.bulkPut(attachments);
+              }
+
+          } else if (payload.eventType === 'UPDATE') {
+              const updatedMessage = { ...record, synced: 1, is_read: record.is_read ? 1 : 0 };
+              await db.social_user_direct_messages.update(record.id, updatedMessage);
+          }
+      });
 
     channel.on('presence', { event: 'sync' }, () => {
       const presenceState = channel.presenceState();
@@ -153,18 +228,24 @@ const ConversationView = ({ conversationId, partnerId }: ConversationViewProps) 
 
     const handleSendMessage = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!newMessage.trim() || !userProfile) return;
+        if ((!newMessage.trim() && filesToUpload.length === 0) || !userProfile) return;
+        
         try {
             await createLocalDirectMessage({
                 conversation_id: conversationId,
                 sending_user_id: userProfile.user_id,
                 direct_message: newMessage,
+                attachments: filesToUpload, // Pass the files
+                reply_to_message_id: replyingTo ? replyingTo.id : null,
             });
             clearTimeout(typingTimeoutRef.current!);
             if (channelRef.current) {
                 await channelRef.current.track({ user_id: userProfile.user_id, status: 'online' });
             }
             setNewMessage('');
+            setFilesToUpload([]);
+            setShowUploader(false);
+            setReplyingTo(null);
             scrollToBottom('smooth');
             if (navigator.onLine) {
                 syncLocalDirectMessages(supabase);
@@ -172,6 +253,16 @@ const ConversationView = ({ conversationId, partnerId }: ConversationViewProps) 
         } catch (error) {
             console.error("Failed to send message:", error);
         }
+    };
+
+    // --- NEW ---
+    const handleSetReply = (message: LocalDirectMessage) => {
+        setReplyingTo(message);
+        setOpenMenuId(null);
+    };
+
+    const handleUploadChange = (data: OutputCollectionState) => {
+        setFilesToUpload(data.allEntries.filter(f => f.status === 'success'));
     };
 
     const handleDeleteForMe = (messageId: number) => {
@@ -247,6 +338,11 @@ const ConversationView = ({ conversationId, partnerId }: ConversationViewProps) 
                                     <div className={`absolute z-20 w-48 bg-white rounded-md shadow-lg ${isSentByUser ? 'right-0' : 'left-0'}`}>
                                         <ul className="py-1 text-sm text-gray-700">
                                             <li>
+                                                <a href="#" onClick={(e) => { e.preventDefault(); handleSetReply(msg); }} className="flex items-center px-4 py-2 hover:bg-gray-100">
+                                                    <FiEdit3 className="mr-2"/> Reply
+                                                </a>
+                                            </li>
+                                            <li>
                                                 <a href="#" onClick={(e) => { e.preventDefault(); handleDeleteForMe(msg.id!); }} className="flex items-center px-4 py-2 hover:bg-gray-100">
                                                     <FiXCircle className="mr-2"/> Delete for Me
                                                 </a>
@@ -262,13 +358,24 @@ const ConversationView = ({ conversationId, partnerId }: ConversationViewProps) 
                                     </div>
                                 )}
                             </div>
-                            <div className={`message-bubble-${isSentByUser ? 'sender' : 'receiver'}`}>
-                                <p>{msg.direct_message}</p>
+                            <div className={`message-bubble-${isSentByUser ? 'sender' : 'receiver'} relative`}>
+                                {msg.reply_to_message_id && <ReplyPreview messageId={msg.reply_to_message_id} />}
+                                {msg.direct_message && <p>{msg.direct_message}</p>}
+                                <MessageAttachments message={msg} />
                                 <div className="flex items-center mt-[2px]">
                                     <span className={`text-[0.75em] ${isSentByUser ? 'mr-[8px] self-end' : 'self-start'}`}>
                                         {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                     </span>
                                     {isSentByUser && <ReadReceipt isRead={msg.is_read === 1} />}
+                                </div>
+                                {/* --- NEW --- Add the Reactions component */}
+                                <div className={`absolute text-sm ${isSentByUser ? '-bottom-[22px] right-[16px]' : '-bottom-[22px] left-[8px]'}`}>
+                                    <Reactions 
+                                        entityId={msg.id!} 
+                                        entityType="direct_message" 
+                                        userProfile={userProfile} 
+                                        displayStyle="text"
+                                    />
                                 </div>
                             </div>
                         </div>
@@ -287,9 +394,43 @@ const ConversationView = ({ conversationId, partnerId }: ConversationViewProps) 
             )}
 
             <div className="flex-shrink-0 p-[1em] bg-gray-50 border-t border-gray-200">
+                {replyingTo && (
+                    <div className="reply-preview-input">
+                        <div className="reply-preview-content">
+                            <p className="reply-author">Replying to {replyingTo.sending_user_id === userProfile?.user_id ? 'yourself' : partnerProfile?.displayName}</p>
+                            <p className="reply-content">{replyingTo.direct_message}</p>
+                        </div>
+                        <button onClick={() => setReplyingTo(null)} className="p-2">
+                            <FiX />
+                        </button>
+                    </div>
+                )}                
+                {showUploader && (
+                    <div className="p-2 border-b">
+                        <FileUploaderRegular
+                            pubkey={process.env.NEXT_PUBLIC_UPLOADCARE_PUBLIC_KEY || ''}
+                            multiple
+                            imgOnly
+                            sourceList='local, url, camera, gdrive'
+                            onChange={handleUploadChange}
+                            classNameUploader="uc-light"
+                        />
+                    </div>
+                )}
+                {filesToUpload.length > 0 && (
+                    <div className="p-2 border-b flex gap-2">
+                        {filesToUpload.map(file => (
+                            <div key={file.uuid} className="relative">
+                                <Image src={`${file.cdnUrl}-/preview/80x80/`} width={60} height={60} alt="preview" className="rounded"/>
+                            </div>
+                        ))}
+                    </div>
+                )}
                 <form onSubmit={handleSendMessage} className="flex items-center">
                     <BsEmojiSmile size={24} className="text-gray-500 cursor-pointer hover:text-gray-700" />
-                    <FiPaperclip size={24} className="text-gray-500 ml-[8px] cursor-pointer hover:text-gray-700" />
+                    <button type="button" onClick={() => setShowUploader(!showUploader)}>
+                        <FiPaperclip size={24} className="text-gray-500 ml-[8px] cursor-pointer hover:text-gray-700" />
+                    </button>
                     <input
                         type="text"
                         value={newMessage}

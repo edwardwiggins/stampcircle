@@ -127,6 +127,16 @@ export interface LocalCommentReaction {
  is_deleted?: boolean;
 }
 
+// --- NEW --- Interface for message reactions
+export interface LocalMessageReaction {
+  id: number;
+  message_id: number;
+  reaction_id: number;
+  user_id: string;
+  synced?: 0 | 1;
+  is_deleted?: boolean;
+}
+
 export interface LocalSocialTag {
  id: number;
  tag_name: string;
@@ -163,8 +173,21 @@ export interface LocalDirectMessage {
  created_at: string;
  sending_user_id: string;
  direct_message: string;
+ reply_to_message_id?: number | null;
  is_read: 0 | 1;
  synced: 0 | 1;
+ attachments?: OutputFileEntry[]; // --- NEW --- For handling unsynced local files
+}
+
+// --- NEW --- Interface for our new attachments table
+export interface LocalMessageAttachment {
+    id: number;
+    message_id: number;
+    user_id: string;
+    file_path: string;
+    file_type?: string;
+    file_name?: string;
+    created_at: string;
 }
 
 export interface LocalDeletedMessage {
@@ -198,6 +221,8 @@ export class SocialDatabase extends Dexie {
  social_reactions!: Table<LocalReactionType>;
  social_posts_reactions!: Table<LocalPostReaction>;
  social_comments_reactions!: Table<LocalCommentReaction>;
+ // --- NEW --- Table definition for message reactions
+ social_direct_message_reactions!: Table<LocalMessageReaction>;
  social_tags!: Table<LocalSocialTag>;
  social_post_tags!: Table<LocalPostTag>;
  social_user_connections!: Table<LocalUserConnection>;
@@ -206,11 +231,11 @@ export class SocialDatabase extends Dexie {
  social_deleted_messages!: Table<LocalDeletedMessage>;
   social_conversations!: Table<LocalConversation>;
   social_conversation_participants!: Table<LocalConversationParticipant>;
+  social_message_attachments!: Table<LocalMessageAttachment>; // --- NEW ---
  
  constructor() {
   super('SocialDatabase');
-    // --- UPDATED --- Incremented version number to 36 to apply the schema change
-  this.version(36).stores({
+  this.version(39).stores({
    social_posts: '++id, author_id, created_at, synced, is_deleted, related_post_id',
    userProfile: 'user_id, &username, displayName',
    social_post_comments: '++id, post_id, author_id, parent_comment_id, synced, is_deleted',
@@ -222,15 +247,17 @@ export class SocialDatabase extends Dexie {
    social_reactions: 'id',
    social_posts_reactions: '++id, &[user_id+post_id], post_id, synced, is_deleted, [synced+user_id]',
    social_comments_reactions: '++id, &[user_id+comment_id], comment_id, synced, is_deleted, [synced+user_id]',
+   // --- NEW --- Schema for the new message reactions table
+   social_direct_message_reactions: '++id, &[user_id+message_id], message_id, synced, is_deleted, [synced+user_id]',
    social_tags: '++id, tag_name, tag_displayname, [tag_status+is_category]',
    social_post_tags: '++id, &[post_id+tag_id], post_id',
    social_user_connections: '++id, &[user_id+target_user_id], status',
    social_user_follows: '++id, &[follower_id+following_id], follower_id, following_id',
-      // --- UPDATED --- Removed the obsolete field and index from the schema definition
-   social_user_direct_messages: '++id, conversation_id, sending_user_id, is_read, created_at, synced',
+   social_user_direct_messages: '++id, conversation_id, sending_user_id, is_read, created_at, synced, reply_to_message_id',
    social_deleted_messages: '++id, &[user_id+message_id], synced',
-      social_conversations: '++id, last_message_at',
-      social_conversation_participants: '++id, &[conversation_id+user_id], user_id',
+   social_conversations: '++id, last_message_at',
+   social_conversation_participants: '++id, &[conversation_id+user_id], user_id',
+   social_message_attachments: '++id, message_id, user_id',
   });
  }
 }
