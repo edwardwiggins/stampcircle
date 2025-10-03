@@ -1,18 +1,18 @@
 // app/components/FeedContainer.tsx
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { useLiveQuery } from 'dexie-react-hooks';
+import { useEffect } from 'react';
+import { useInfiniteQuery } from '@tanstack/react-query';
+import { useInView } from 'react-intersection-observer';
 import Feed from './Feed';
 import AddPostButton from './AddPostButton';
 import PostSkeleton from './PostSkeleton';
 import { db } from '@/app/lib/local-db';
-import type { LocalPost, LocalUserProfile, LocalNotification } from '@/app/lib/local-db';
 import { useUser } from '@/app/context/user-context';
-import { syncLocalPosts, fetchPaginatedFeed, syncUserSocialGraph } from '@/app/lib/supabase-sync-utils';
+import { syncLocalPosts, fetchStructuredFeed, syncUserSocialGraph } from '@/app/lib/supabase-sync-utils';
+import FeedCarousel from './FeedCarousel';
 import { SlRefresh } from "react-icons/sl";
 import { trackEvent } from '@/app/lib/analytics';
-import { useInView } from 'react-intersection-observer';
 import toast from 'react-hot-toast';
 import type { OutputFileEntry } from '@uploadcare/react-uploader';
 
@@ -26,98 +26,47 @@ const NewPostsButton = ({ onClick }: { onClick: () => void }) => {
 };
 
 export default function FeedContainer() {
- const { userProfile, loading: userLoading, supabase, isDbReady, newPostsAvailable, setNewPostsAvailable } = useUser();
- const initialFetchComplete = useRef(false);
- 
- const [isInitialLoading, setIsInitialLoading] = useState(true);
- const [isPageLoading, setIsPageLoading] = useState(false);
- const [currentPage, setCurrentPage] = useState(0);
- const [hasMore, setHasMore] = useState(true);
+    const { userProfile, loading: userLoading, supabase, isDbReady, newPostsAvailable, setNewPostsAvailable } = useUser();
 
- const posts = useLiveQuery(
-  () => db.social_posts
-   .orderBy('created_at')
-   .reverse()
-   .filter(post => post.is_deleted !== true)
-   .toArray(),
-  [] 
- );
-
- const { ref: infiniteScrollRef, inView: isInfiniteScrollTriggerVisible } = useInView({
-  threshold: 0,
-  rootMargin: "400px",
- });
-
- const loadMorePosts = useCallback(async () => {
-  if (isPageLoading || !hasMore || !userProfile) return;
-
-  setIsPageLoading(true);
-  const nextPage = currentPage + 1;
-  const result = await fetchPaginatedFeed(supabase, userProfile.user_id, nextPage);
-  
-  setHasMore(result.hasMore);
-  setCurrentPage(nextPage);
-  setIsPageLoading(false);
- }, [isPageLoading, hasMore, currentPage, userProfile, supabase]);
-
- useEffect(() => {
-  if (isInfiniteScrollTriggerVisible && !isInitialLoading) {
-   loadMorePosts();
-  }
- }, [isInfiniteScrollTriggerVisible, isInitialLoading, loadMorePosts]);
-
- const syncInitialData = useCallback(async () => {
-  if (!supabase || !navigator.onLine) return;
-  try {
-   const [reactionTypes, allUsers] = await Promise.all([
-    supabase.from('social_reactions').select('*'),
-    supabase.from('user_profile').select('*')
-   ]);
-   
-   if (reactionTypes.data) await db.social_reactions.bulkPut(reactionTypes.data);
-   if (allUsers.data) await db.userProfile.bulkPut(allUsers.data);
-
-  } catch (err) {
-   console.error('Error pre-loading initial data:', err);
-  }
- }, [supabase]);
-
- const handleHardRefresh = useCallback(async () => {
-  if (!userProfile || !supabase) return;
-  
-  setIsInitialLoading(true);
-  setNewPostsAvailable(false);
-  setCurrentPage(0);
-  setHasMore(true);
-
-  await db.social_posts.clear();
-  await db.social_post_images.clear();
-  
-  await syncUserSocialGraph(supabase, userProfile.user_id);
-  const result = await fetchPaginatedFeed(supabase, userProfile.user_id, 0);
-  setHasMore(result.hasMore);
-  setIsInitialLoading(false);
-
- }, [userProfile, supabase, setNewPostsAvailable]);
-
- useEffect(() => {
-  if (userProfile?.user_id && isDbReady && !initialFetchComplete.current) {
-   initialFetchComplete.current = true;
-   
-   const performInitialLoad = async () => {
-    setIsInitialLoading(true);
-    await syncInitialData();
-    await syncUserSocialGraph(supabase, userProfile.user_id);
-    const result = await fetchPaginatedFeed(supabase, userProfile.user_id, 0);
+    const { 
+        data, 
+        fetchNextPage, 
+        hasNextPage, 
+        isFetchingNextPage, 
+        isLoading: isFeedLoading, 
+        refetch 
+    } = useInfiniteQuery({
+        queryKey: ['structured-feed', userProfile?.user_id],
+        queryFn: ({ pageParam }) => fetchStructuredFeed(supabase, { pageParam }),
+        initialPageParam: 0,
+        getNextPageParam: (lastPage, allPages) => {
+            return lastPage.hasMore ? allPages.length : undefined;
+        },
+        enabled: !!userProfile && isDbReady,
+    });
     
-    setHasMore(result.hasMore);
-    setIsInitialLoading(false);
-    syncLocalPosts(supabase);
-   };
-   
-   performInitialLoad();
-  }
- }, [userProfile, isDbReady, syncInitialData, supabase]);
+    const { ref: infiniteScrollRef } = useInView({
+        threshold: 0,
+        rootMargin: "400px",
+        onChange: (inView) => {
+            if (inView && hasNextPage && !isFetchingNextPage) {
+                fetchNextPage();
+            }
+        }
+    });
+
+    const handleHardRefresh = () => {
+        setNewPostsAvailable(false);
+        refetch();
+    };
+
+    useEffect(() => {
+        // Initial sync logic (can be simplified if not needed elsewhere)
+        if (userProfile?.user_id && isDbReady) {
+            syncUserSocialGraph(supabase, userProfile.user_id);
+            syncLocalPosts(supabase);
+        }
+    }, [userProfile, isDbReady, supabase]);
 
  // --- REMOVED --- All Realtime logic now lives in the global Header.tsx
 
@@ -128,47 +77,60 @@ export default function FeedContainer() {
  const handleSavePost = async (postId: number, isCurrentlySaved: boolean) => { if (!supabase || !userProfile) return; const eventName = isCurrentlySaved ? 'post_unsaved' : 'post_saved'; trackEvent(eventName, { post_id: postId }); const rpcName = isCurrentlySaved ? 'unsave_post' : 'save_post'; const params = { [`post_id_to_${isCurrentlySaved ? 'unsave' : 'save'}`]: postId }; if (isCurrentlySaved) { const recordToDelete = await db.social_saved_posts.where({ user_id: userProfile.user_id, post_id: postId }).first(); if (recordToDelete) await db.social_saved_posts.delete(recordToDelete.id); } else { await db.social_saved_posts.add({ id: -Date.now(), user_id: userProfile.user_id, post_id: postId, created_at: new Date().toISOString() }); } const { error } = await supabase.rpc(rpcName, params); if (error) { console.error(`Failed to ${eventName}:`, error); toast.error('Something went wrong. Please try again.'); } else { toast.success(isCurrentlySaved ? 'Post unsaved' : 'Post saved!'); } };
 
  const renderFeedContent = () => {
-  if (isInitialLoading) {
-   return Array.from({ length: 5 }).map((_, index) => <PostSkeleton key={index} />);
-  }
-  
-  return (
-   <>
-    <Feed 
-     posts={posts || []}
-     userProfile={userProfile}
-     onDeletePost={handleDeletePost}
-     onUpdatePost={handleUpdatePost}
-     onReportPost={handleReportPost}
-     onBlockUser={handleBlockUser}
-     onSavePost={handleSavePost}
-    />
-    <div ref={infiniteScrollRef} style={{ height: '1px' }} />
+        if (isFeedLoading) {
+            return Array.from({ length: 5 }).map((_, index) => <PostSkeleton key={index} />);
+        }
+        if (!data) return <div className="text-center py-8 text-gray-500">Could not load feed.</div>;
 
-    {isPageLoading && <PostSkeleton />}
-
-    {!isPageLoading && !hasMore && posts && posts.length > 0 && (
-     <div className="text-center py-8 text-gray-500">
-      You&apos;ve reached the end of the feed.
-     </div>
-    )}
-   </>
-  );
- };
+        return (
+            <div>
+                {data.pages.map((page, pageIndex) => (
+                    page.items.map((item: any, itemIndex: number) => {
+                        const uniqueKey = `${pageIndex}-${item.type}-${item.data?.id || item.title}-${itemIndex}`;
+                        if (item.type === 'carousel') {
+                            return <FeedCarousel key={uniqueKey} title={item.title} items={item.items} />;
+                        }
+                        if (item.type === 'post') {
+                            return (
+                                <Feed 
+                                    key={uniqueKey}
+                                    posts={[item.data]}
+                                    userProfile={userProfile}
+                                    onDeletePost={handleDeletePost}
+                                    onUpdatePost={handleUpdatePost}
+                                    onReportPost={handleReportPost}
+                                    onBlockUser={handleBlockUser}
+                                    onSavePost={handleSavePost}
+                                />
+                            );
+                        }
+                        return null;
+                    })
+                ))}
+                <div ref={infiniteScrollRef} style={{ height: '1px' }} />
+                {isFetchingNextPage && <PostSkeleton />}
+                {!hasNextPage && (
+                    <div className="text-center py-8 text-gray-500">
+                        You've reached the end of the feed.
+                    </div>
+                )}
+            </div>
+        );
+    };
 
  if (userLoading || !isDbReady) {
-  return (
-   <div className="feed-container">
-    {Array.from({ length: 5 }).map((_, index) => <PostSkeleton key={index} />)}
-   </div>
-  );
- }
+        return (
+            <div className="feed-container">
+                {Array.from({ length: 5 }).map((_, index) => <PostSkeleton key={index} />)}
+            </div>
+        );
+    }
  
- return (
-  <>
-   {newPostsAvailable && <NewPostsButton onClick={handleHardRefresh} />}
-   <AddPostButton />
-   {renderFeedContent()}
-  </>
- );
+    return (
+        <>
+            {newPostsAvailable && <NewPostsButton onClick={handleHardRefresh} />}
+            <AddPostButton />
+            {renderFeedContent()}
+        </>
+    );
 }

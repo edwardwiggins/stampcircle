@@ -112,7 +112,7 @@ export default function Reactions({ entityId, entityType, userProfile, displaySt
       onMouseLeave={handleMouseLeave}
     >
       {isPopupVisible && reactionTypes && (
-        <div className="reactions-popup">
+        <div className="reactions-popup z-50">
           {reactionTypes.map(reaction => (
             <Image
               key={reaction.id}
@@ -132,14 +132,14 @@ export default function Reactions({ entityId, entityType, userProfile, displaySt
       <div className={containerClassName} onClick={handleButtonClick} style={buttonStyle}>
         {currentReactionType ? (
           <>
-            <Image src={currentReactionType.reaction_icon} alt={currentReactionType.reaction} width={20} height={20} className='post-icon' />
+            <Image src={currentReactionType.reaction_icon} alt={currentReactionType.reaction} width={20} height={20} className='post-icon rounded-full' />
             {currentReactionType.reacted_text}
           </>
         ) : (
-          <>
+          <div>
             {displayStyle === 'button' && <SlLike className='post-icon' size={16} />}
             Like
-          </>
+          </div>
         )}
       </div>
     </div>

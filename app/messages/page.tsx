@@ -5,35 +5,35 @@ import { useState, useEffect } from 'react';
 import ConversationList from '@/app/components/messages/ConversationList';
 import ConversationView from '@/app/components/messages/ConversationView';
 import ContactList from '@/app/components/messages/ContactList';
+import CreateGroup from '@/app/components/messages/CreateGroup';
+import GroupDetails from '@/app/components/messages/GroupDetails';
+import AddParticipants from '@/app/components/messages/AddParticipants';
 import { useUser } from '@/app/context/user-context';
 import { reconcileMessages, findOrCreateConversation } from '@/app/lib/supabase-sync-utils';
 import Image from 'next/image';
 
-type LeftPanelView = 'conversations' | 'contacts';
+type LeftPanelView = 'conversations' | 'contacts' | 'new_group' | 'group_details' | 'add_participants'; // --- UPDATED ---
+
 type SelectedConversation = {
     conversationId: number;
-    partnerId: string;
+    partnerId: string | null;
 }
 
 const MessagesPage = () => {
 const { userProfile, loading: userLoading, supabase } = useUser();
 const [selectedConversation, setSelectedConversation] = useState<SelectedConversation | null>(null);
 const [leftPanelView, setLeftPanelView] = useState<LeftPanelView>('conversations');
-  // --- NEW --- State to control when the list is allowed to fetch data
-  const [isDataReady, setIsDataReady] = useState(false);
 
 useEffect(() => {
    const initialLoad = async () => {
         if (userProfile?.user_id) {
-            // Wait for the reconciliation to finish before allowing children to render
             await reconcileMessages(supabase, userProfile.user_id);
-            setIsDataReady(true);
         }
     };
     initialLoad();
 }, [userProfile?.user_id, supabase]);
 
-const handleSelectConversation = (conversationId: number, partnerId: string) => {
+const handleSelectConversation = (conversationId: number, partnerId: string | null) => {
  setSelectedConversation({ conversationId, partnerId });
 };
 
@@ -41,45 +41,69 @@ const handleSelectConversation = (conversationId: number, partnerId: string) => 
     if (!userProfile) return;
     const conversationId = await findOrCreateConversation(supabase, userProfile.user_id, partnerId);
     if (conversationId) {
-        // After creating a new conversation, re-reconcile to get the new data locally
         await reconcileMessages(supabase, userProfile.user_id);
         setSelectedConversation({ conversationId, partnerId });
         setLeftPanelView('conversations');
-    } else {
-        console.error("Could not find or create a conversation.");
     }
   };
 
+  const handleGroupCreated = async () => {
+    if (!userProfile) return;
+    await reconcileMessages(supabase, userProfile.user_id);
+    setLeftPanelView('conversations');
+  };
+
 if (userLoading || !userProfile) {
- return (
- <div className="flex flex-col h-screen items-center justify-center">
-  <Image
-   src='https://xfotoaervolaaiqrhgue.supabase.co/storage/v1/object/public/resourceImages/stamp-collecting-labrador-cartoon.png'
-   alt='stamp collecting labrador'
-   width={350}
-   height={350}
-   className="object-contain"
-  />
-  <p className="mt-[16px] text-xl text-gray-400">Loading messages...</p>
- </div>
- );
-}
+    return (
+     <div className="flex flex-col h-screen items-center justify-center">
+      <Image
+       src='/images/stamp-collecting-labrador-cartoon.png'
+       alt='stamp collecting labrador'
+       width={250}
+       height={250}
+       className="fit-contain"
+      />
+      <p className="mt-[16px] text-xl text-gray-400">Loading messages...</p>
+     </div>
+    );
+   }
 
 return (
   <div className="flex h-screen bg-white overflow-y-hidden">
     <div className="w-1/3 flex flex-col mt-[86px]">
-      {leftPanelView === 'conversations' ? (
-        <ConversationList 
-                    isDataReady={isDataReady} // --- NEW --- Pass the ready signal down
-          onSelectConversation={handleSelectConversation} 
-          onNewMessage={() => setLeftPanelView('contacts')} 
-        />
-      ) : (
-        <ContactList 
-          onSelectUser={handleSelectUserFromContacts}
-          onBack={() => setLeftPanelView('conversations')}
-        />
-      )}
+            {leftPanelView === 'conversations' && (
+                <ConversationList 
+                    onSelectConversation={handleSelectConversation} 
+                    onNewMessage={() => setLeftPanelView('contacts')} 
+                />
+            )}
+            {leftPanelView === 'contacts' && (
+                <ContactList 
+                    onSelectUser={handleSelectUserFromContacts}
+                    onBack={() => setLeftPanelView('conversations')}
+                    onNewGroup={() => setLeftPanelView('new_group')}
+                />
+            )}
+            {leftPanelView === 'new_group' && (
+                <CreateGroup
+                    onGroupCreated={handleGroupCreated}
+                    onBack={() => setLeftPanelView('contacts')}
+                />
+            )}
+            {leftPanelView === 'group_details' && selectedConversation && (
+                    <GroupDetails
+                        conversationId={selectedConversation.conversationId}
+                        onBack={() => setLeftPanelView('conversations')}
+                        onAddParticipants={() => setLeftPanelView('add_participants')}
+                    />
+                )}
+            {leftPanelView === 'add_participants' && selectedConversation && (
+                    <AddParticipants
+                        conversationId={selectedConversation.conversationId}
+                        onParticipantsAdded={() => setLeftPanelView('group_details')}
+                        onBack={() => setLeftPanelView('group_details')}
+                    />
+                )}
     </div>
 
     <div className="w-2/3 flex flex-col mt-[70px]">
@@ -87,7 +111,8 @@ return (
         <ConversationView 
                   key={selectedConversation.conversationId}
                   conversationId={selectedConversation.conversationId} 
-                  partnerId={selectedConversation.partnerId} 
+                  partnerId={selectedConversation.partnerId}
+                  onShowDetails={() => setLeftPanelView('group_details')}
               />
       ) : (
         <div className="flex-grow flex items-center justify-center bg-gray-50">

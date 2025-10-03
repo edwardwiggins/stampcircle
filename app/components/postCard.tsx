@@ -26,6 +26,7 @@ import '@/app/styles/mentions-input.css';
 import RelationshipBadge from './RelationshipBadge';
 import SocialProof from './SocialProof';
 import { useRelationshipStatus } from '@/app/hooks/useRelationshipStatus';
+import PostAwardBadge from './PostAwardBadge';
 
 const PostTags = ({ tags }: { tags: LocalSocialTag[] }) => {
     if (!tags || tags.length === 0) {
@@ -91,7 +92,7 @@ const UserPost = ({ post, userProfile, onUpdate, onDelete, onReport, onBlockUser
     const [editedContent, setEditedContent] = useState(post.post_content);
     const [editedAllowComments, setEditedAllowComments] = useState(post.allow_comments ?? true);
     const menuRef = useRef<HTMLDivElement>(null);
-    const defaultAvatar = '/default-avatar.jpg';
+    const defaultAvatar = '/images/default-avatar.jpg';
     const [newlyUploadedFiles, setNewlyUploadedFiles] = useState<OutputFileEntry[]>([]);
     const [imagesToDelete, setImagesToDelete] = useState<number[]>([]);
     const [sessionSuggestedTags, setSessionSuggestedTags] = useState<string[]>([]);
@@ -384,6 +385,8 @@ const UserPost = ({ post, userProfile, onUpdate, onDelete, onReport, onBlockUser
                     )}
                 </div>
                 {showActions && (
+                    <div className="flex items-center gap-2" ref={menuRef}>
+                        {post.award && <PostAwardBadge award={post.award}/>}
                     <div className="comment-options" ref={menuRef}>
                         <SlOptions size={32} className="options-icon" onClick={() => setIsMenuOpen(!isMenuOpen)} />
                         {isMenuOpen && (
@@ -426,6 +429,7 @@ const UserPost = ({ post, userProfile, onUpdate, onDelete, onReport, onBlockUser
                                 )}
                             </div>
                         )}
+                    </div>
                     </div>
                 )}
             </div>

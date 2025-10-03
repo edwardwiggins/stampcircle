@@ -26,7 +26,7 @@ return (
    </head>
    <body className={inter.className}>
     <Providers>
-          <Header className='z-100'/> {/* --- NEW --- Render the Header globally */}
+          <Header className='z-1000'/> {/* --- NEW --- Render the Header globally */}
      {children}
     </Providers>
    </body>

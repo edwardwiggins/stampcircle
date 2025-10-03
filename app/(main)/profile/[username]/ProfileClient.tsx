@@ -50,7 +50,7 @@ export default function ProfileClient({ profile }: ProfileClientProps) {
             <div className="p-6">
                 {/* --- NEW --- Conditionally render the notification manager */}
                 {isOwnProfile && (
-                    <div className="mb-6 p-4 border rounded-lg bg-gray-50">
+                    <div className="mb-6 p-4 rounded-lg bg-gray-50">
                         <h2 className="text-lg font-semibold mb-2">Notification Settings</h2>
                         <PushNotificationManager />
                     </div>

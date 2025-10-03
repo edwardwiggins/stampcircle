@@ -6,6 +6,8 @@ import Image from 'next/image';
 import FeedContainer from './components/FeedContainer';
 import OnboardingFlow from './components/onboarding/OnboardingFlow';
 import { useUser } from './context/user-context';
+import { db } from './lib/local-db';
+import TrendingSidebar from './components/TrendingSidebar';
 
 export default function Home() {
   const { userProfile, supabase, updateUserProfile } = useUser();
@@ -24,7 +26,7 @@ export default function Home() {
   if (!userProfile) {
     return <div className="flex flex-col h-screen items-center justify-center">
               <Image
-                src='/stamp_community.png'
+                src='/images/stamp_community.png'
                 alt="Profile Picture"
                 width={357}
                 height={221}
@@ -70,7 +72,7 @@ export default function Home() {
 
       <div className='container'>
         <aside className='left-sidebar'>
-          <div className="p-4 rounded-lg shadow bg-white text-center">
+          <div className="headings p-4 rounded-lg shadow bg-white text-center">
             <Image
               src={userProfile.profileImage || userProfile.default_profileImage}
               alt="Profile Picture"
@@ -78,7 +80,7 @@ export default function Home() {
               height={80}
               className="rounded-full mx-auto mb-4"
             />
-            <h3 className="font-bold text-lg">{`${getGreeting()},`}</h3>
+            <h2 className="font-bold text-lg">{`${getGreeting()},`}</h2>
             <p className="text-gray-800 text-xl">{userProfile.displayName}</p>
           </div>
         </aside>
@@ -86,8 +88,7 @@ export default function Home() {
           <FeedContainer />
         </div>
         <aside className='right-sidebar'>
-          <h2>Extras</h2>
-          <p>Friends, Ads, or Suggested Content</p>
+          <TrendingSidebar />
         </aside>
       </div>
       <footer>

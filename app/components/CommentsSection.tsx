@@ -97,8 +97,8 @@ const Comment = ({
   onUpdate, 
   onReport 
 }: CommentProps) => {
-  const defaultAvatar = '/default-avatar.jpg';
-  const deletedAvatar = '/deleted_User.jpg'; 
+  const defaultAvatar = '/images/default-avatar.jpg';
+  const deletedAvatar = '/images/deleted_User.jpg'; 
   const isExpanded = expandedReplies.has(comment.id);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);

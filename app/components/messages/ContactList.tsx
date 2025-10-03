@@ -6,18 +6,19 @@ import { useUser } from '@/app/context/user-context';
 import { db, LocalUserProfile } from '@/app/lib/local-db';
 import { useLiveQuery } from 'dexie-react-hooks';
 import Image from 'next/image';
-import { FiSearch, FiArrowLeft } from 'react-icons/fi';
+import { FiSearch, FiArrowLeft, FiUsers } from 'react-icons/fi';
 
 interface ContactListProps {
     onSelectUser: (userId: string) => void;
     onBack: () => void;
+    onNewGroup: () => void;
 }
 
-const ContactList = ({ onSelectUser, onBack }: ContactListProps) => {
-    const { userProfile } = useUser();
-    const [searchTerm, setSearchTerm] = useState('');
+const ContactList = ({ onSelectUser, onBack, onNewGroup }: ContactListProps) => {
+  const { userProfile } = useUser();
+  const [searchTerm, setSearchTerm] = useState('');
 
-    const connections = useLiveQuery(async () => {
+  const connections = useLiveQuery(async () => {
         if (!userProfile) return [];
         const allConnections = await db.social_user_connections
             .where('status').equals('active')
@@ -28,34 +29,39 @@ const ContactList = ({ onSelectUser, onBack }: ContactListProps) => {
         );
         if (partnerIds.length === 0) return [];
         return await db.userProfile.where('user_id').anyOf(partnerIds).toArray();
-    }, [userProfile], []);
+  }, [userProfile]);
 
-    const filteredConnections = connections?.filter(user => 
-        user.displayName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        user.username.toLowerCase().includes(searchTerm.toLowerCase())
-    ) || [];
+  const filteredConnections = connections?.filter(user => 
+    user.displayName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    user.username.toLowerCase().includes(searchTerm.toLowerCase())
+  ) || [];
 
-    return (
-        <div className="flex flex-col h-full">
-            {/* Header */}
-            <div className="p-4 border-b border-gray-200">
-                <div className="flex items-center mb-4">
-                    <button onClick={onBack} className="p-2 rounded-full hover:bg-gray-200 mr-2">
-                        <FiArrowLeft size={20} />
-                    </button>
-                    <h1 className="text-xl font-bold text-gray-800">New Chat</h1>
-                </div>
-                <div className="relative">
-                    <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                    <input
-                        type="text"
-                        placeholder="Search connections..."
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                        className="w-full pl-10 pr-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                </div>
-            </div>
+  return (
+    <div className="flex flex-col h-full">
+      <div className="p-4 border-b border-gray-200">
+        <div className="flex items-center mb-4">
+          <button onClick={onBack} className="p-2 rounded-full hover:bg-gray-200 mr-2">
+            <FiArrowLeft size={20} />
+          </button>
+          <h1 className="text-xl font-bold text-gray-800">New Chat</h1>
+        </div>
+                <button onClick={onNewGroup} className="w-full flex items-center p-3 mb-4 rounded-lg hover:bg-gray-100">
+                    <div className="p-2 bg-blue-500 text-white rounded-full">
+                        <FiUsers size={20} />
+                    </div>
+                    <span className="ml-4 font-semibold text-blue-500">New Group</span>
+                </button>
+        <div className="relative">
+          <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Search connections to add..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pl-10 pr-4 py-2 border rounded-lg focus:outline-none"
+          />
+        </div>
+      </div>
 
             {/* Connections List */}
             <div className="flex-grow overflow-y-auto">

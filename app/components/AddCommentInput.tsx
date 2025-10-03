@@ -28,7 +28,7 @@ export default function AddCommentInput({ userProfile, onAddComment, parentId = 
     
     const containerRef = useRef<HTMLDivElement>(null);
 
-    const defaultAvatar = '/default-avatar.jpg';
+    const defaultAvatar = '/images/default-avatar.jpg';
     
     if (!userProfile) {
         return null;

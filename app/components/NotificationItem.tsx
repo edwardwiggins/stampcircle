@@ -77,9 +77,14 @@ export default function NotificationItem({ notification }: NotificationItemProps
             message = 'accepted your request to connect.';
             link = '#';
             break;
-        case 'new_message':
-            message = 'sent you a new Direct Message.';
-            link = '#';
+        case 'new_direct_message':
+            message = 'sent you a new message.';
+            link = '/messages';
+            break;
+        case 'new_group_message':
+            const groupName = notification.data.group_name || 'a group';
+            message = `sent a message in the group "${groupName}".`;
+            link = `/messages?conversationId=${notification.data.entity_id}`;
             break;
         default:
             message = 'sent you a notification.';

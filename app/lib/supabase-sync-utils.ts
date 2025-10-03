@@ -55,7 +55,7 @@ export async function syncUserSocialGraph(supabase: SupabaseClient, userId: stri
   console.error("Error syncing user's social graph:", error);
  }
 }
-
+{/*
 export async function fetchPaginatedFeed(supabase: SupabaseClient, userId: string, page: number, pageSize: number = 10) {
  if (!supabase || !userId) return { posts: [], hasMore: false };
 
@@ -163,7 +163,7 @@ export async function fetchPaginatedFeed(supabase: SupabaseClient, userId: strin
   console.error('Error fetching paginated feed:', err);
   return { posts: [], hasMore: false };
  }
-}
+} */}
 
 const extractMentions = (content: string, pattern: RegExp): { display: string, id: string }[] => {
  const matches = [...content.matchAll(pattern)];
@@ -571,8 +571,6 @@ export async function syncLocalReactions(supabase: SupabaseClient) {
  }
 }
 
-// --- MESSAGING FUNCTIONS REWRITTEN FOR CONVERSATION-BASED MODEL ---
-
 export async function findOrCreateConversation(supabase: SupabaseClient, currentUserId: string, partnerId: string): Promise<number | null> {
     if (!currentUserId || !partnerId) return null;
     try {
@@ -716,9 +714,22 @@ export async function reconcileMessages(supabase: SupabaseClient, userId: string
     if (convoError) throw convoError;
     if (!conversations || conversations.length === 0) return;
 
-    await db.social_conversations.bulkPut(conversations);
-    const allParticipants = conversations.flatMap(c => c.social_conversation_participants);
-    await db.social_conversation_participants.bulkPut(allParticipants);
+// --- UPDATED LOGIC ---
+        // This transaction now clears old participants before adding the new, correct list.
+        await db.transaction('rw', db.social_conversations, db.social_conversation_participants, async () => {
+            // Get a list of all local participant records for the relevant conversations
+            const localParticipants = await db.social_conversation_participants
+                .where('conversation_id').anyOf(conversationIds).toArray();
+            
+            // Delete all of them to ensure a clean slate
+            await db.social_conversation_participants.bulkDelete(localParticipants.map(p => p.id));
+
+            // Now, save the fresh data from the server
+        await db.social_conversations.bulkPut(conversations);
+        const allParticipants = conversations.flatMap(c => c.social_conversation_participants);
+        await db.social_conversation_participants.bulkPut(allParticipants);
+        });
+        // --- END OF UPDATED LOGIC ---
 
     const sortedMessages = await db.social_user_direct_messages.where('conversation_id').anyOf(conversationIds).sortBy('created_at');
         const lastLocalMessage = sortedMessages.length > 0 ? sortedMessages[sortedMessages.length - 1] : undefined;
@@ -755,7 +766,6 @@ export async function reconcileMessages(supabase: SupabaseClient, userId: string
     console.error('Failed to reconcile messages:', error);
   }
 }
-
 
 export async function deleteMessageForMe(messageId: number, userId: string) {
   try {
@@ -845,5 +855,134 @@ export async function reconcileNotifications(supabase: SupabaseClient, userId: s
         }
     } catch (error) {
         console.error("Error reconciling notifications:", error);
+    }
+}
+
+// --- NEW --- This function calls our powerful "head chef" RPC to get the dynamic feed
+export async function fetchStructuredFeed(supabase: SupabaseClient, { pageParam = 0 }) {
+    if (!supabase) return { items: [], hasMore: false, nextPage: undefined };
+    const pageSize = 10;
+
+    try {
+        const { data: feedItems, error } = await supabase.rpc('generate_structured_feed', {
+            p_page: pageParam,
+            p_page_size: pageSize
+        });
+
+        if (error) throw error;
+        if (!feedItems || (feedItems as any[]).length === 0) {
+            return { items: [], hasMore: false, nextPage: undefined };
+        }
+
+        const postIds = new Set<number>();
+        (feedItems as any[]).forEach(item => {
+            if (item.type === 'post' && item.data) {
+                postIds.add(item.data.id);
+            } else if (item.type === 'carousel' && item.items) {
+                item.items.forEach((post: LocalPost) => postIds.add(post.id));
+            }
+        });
+
+        const allPostIds = Array.from(postIds);
+        if (allPostIds.length === 0) {
+            const hasPosts = (feedItems as any[]).some(item => item.type === 'post');
+            return { items: feedItems, hasMore: hasPosts, nextPage: hasPosts ? pageParam + 1 : undefined };
+        }
+
+        const [
+            postImagesResult,
+            postTagsResult,
+            commentsResult,
+            postReactionsResult,
+            authorIdsResult
+        ] = await Promise.all([
+            supabase.from('social_post_images').select('*').in('post_id', allPostIds),
+            supabase.from('social_post_tags').select('*, social_tags(*)').in('post_id', allPostIds),
+            supabase.from('social_post_comments').select('*, social_comment_images(*)').in('post_id', allPostIds),
+            supabase.from('social_posts_reactions').select('*').in('post_id', allPostIds),
+            supabase.from('social_posts').select('id, author_id').in('id', allPostIds)
+        ]);
+
+        const authorIds = new Set<string>(authorIdsResult.data?.map(p => p.author_id));
+        commentsResult.data?.forEach(c => authorIds.add(c.author_id));
+        const { data: profiles } = await supabase.from('user_profile').select('*').in('user_id', Array.from(authorIds));
+        
+        await db.transaction('rw', db.social_post_images, db.social_post_tags, db.social_tags, db.social_posts_reactions, db.social_post_comments, db.social_comment_images, db.userProfile, async () => {
+            if (postImagesResult.data) await db.social_post_images.bulkPut(postImagesResult.data);
+            if (postReactionsResult.data) await db.social_posts_reactions.bulkPut(postReactionsResult.data);
+            if (profiles) await db.userProfile.bulkPut(profiles);
+            
+            const tags = postTagsResult.data?.flatMap(pt => pt.social_tags ? [pt.social_tags] : []) || [];
+            if (tags.length > 0) await db.social_tags.bulkPut(tags);
+            
+            const postTags = postTagsResult.data?.map(({ social_tags, ...rest }) => rest) || [];
+            if (postTags.length > 0) await db.social_post_tags.bulkPut(postTags);
+
+            if (commentsResult.data) {
+                const commentsToStore: LocalComment[] = [];
+                const commentImagesToStore: LocalCommentImage[] = [];
+                commentsResult.data.forEach((comment: any) => {
+                    const { social_comment_images, ...commentData } = comment;
+                    commentsToStore.push({ ...commentData, created_at: new Date(commentData.created_at), synced: 1 });
+                    if (social_comment_images) {
+                        commentImagesToStore.push(...social_comment_images);
+                    }
+                });
+                await db.social_post_comments.bulkPut(commentsToStore);
+                if (commentImagesToStore.length > 0) {
+                    await db.social_comment_images.bulkPut(commentImagesToStore);
+                }
+            }
+        });
+        
+        const imagesByPostId = new Map<number, any[]>();
+        postImagesResult.data?.forEach(img => {
+            if (!imagesByPostId.has(img.post_id)) imagesByPostId.set(img.post_id, []);
+            imagesByPostId.get(img.post_id)!.push({ cdnUrl: img.image_url, id: img.id, uuid: img.id.toString() });
+        });
+
+        const tagsByPostId = new Map<number, LocalSocialTag[]>();
+        postTagsResult.data?.forEach((pt: any) => {
+            if (!tagsByPostId.has(pt.post_id)) tagsByPostId.set(pt.post_id, []);
+            if (pt.social_tags) tagsByPostId.get(pt.post_id)!.push(pt.social_tags);
+        });
+        
+        const commentsCountByPostId = new Map<number, number>();
+        commentsResult.data?.forEach(c => {
+           commentsCountByPostId.set(c.post_id, (commentsCountByPostId.get(c.post_id) || 0) + 1);
+        });
+
+        const reactionsCountByPostId = new Map<number, number>();
+        postReactionsResult.data?.forEach(r => {
+            reactionsCountByPostId.set(r.post_id, (reactionsCountByPostId.get(r.post_id) || 0) + 1);
+        });
+
+        const enrichedFeedItems = (feedItems as any[]).map(item => {
+            const enrichPost = (post: LocalPost): LocalPost => ({
+                ...post,
+                images: imagesByPostId.get(post.id) || [],
+                tags: tagsByPostId.get(post.id) || [],
+                totalcomments: commentsCountByPostId.get(post.id) || 0,
+                totalreactions: reactionsCountByPostId.get(post.id) || 0,
+                synced: 1
+            });
+
+            if (item.type === 'post' && item.data) {
+                return { ...item, data: enrichPost(item.data) };
+            }
+            if (item.type === 'carousel' && item.items) {
+                return { ...item, items: item.items.map(enrichPost) };
+            }
+            return item;
+        });
+        
+        const postCount = (feedItems as any[]).filter(item => item.type === 'post').length;
+        const hasMore = postCount >= pageSize;
+
+        return { items: enrichedFeedItems, hasMore, nextPage: hasMore ? pageParam + 1 : undefined };
+        
+    } catch (err) {
+        console.error('Error fetching structured feed:', err);
+        return { items: [], hasMore: false, nextPage: undefined };
     }
 }
